@@ -164,3 +164,45 @@ The admin tab has a clickable list of available actions.  Actions include:
   4. For requestors with equivalent credits, pick the harder-to-place request first, as those are harder to place later.  This could apply to larger groups, longer trips, or fewer huts in the request (ie. fewer hut choices are harder to place).  
   5. For each request, place in the hut (of the hut choices that are selected in the request) which results in the most remaining open spots when looking at the single date of the trip that has the fewest remaining open spots (the max of the mins).  Record the assignment in the requestor record (and request) and move to the next request.  
 * Efficiency report.  The % of requesting groups (and spots) who got their first choice, second choice, etc.
+
+---
+
+## App Quickstart
+
+### 1. Install dependencies
+
+```powershell
+npm install
+```
+
+### 2. Set required environment variables
+
+```powershell
+$env:EMAIL_HASH_SALT='devsalt'
+$env:SESSION_SECRET='dev-session-secret'
+```
+
+### 3. Start the app
+
+```powershell
+npm start
+```
+
+Open: <http://localhost:3000>
+
+### 4. Login with seeded users
+
+The app reads data from `data/requestors.tsv` and `data/requests.tsv`.
+
+Seeded accounts in this repo:
+
+- Admin user
+  - Email: `ADMIN@EXAMPLE.COM`
+  - Code (with `EMAIL_HASH_SALT=devsalt`): `7245`
+- Standard user
+  - Email: `USER@EXAMPLE.COM`
+  - Code (with `EMAIL_HASH_SALT=devsalt`): `2900`
+
+You can also pass login link style URL params:
+
+- `http://localhost:3000/?email=ADMIN@EXAMPLE.COM&hash=7245`

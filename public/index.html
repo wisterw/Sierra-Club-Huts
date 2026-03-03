@@ -1,0 +1,57 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Sierra Club Huts</title>
+    <link rel="stylesheet" href="/css/styles.css" />
+  </head>
+  <body>
+    <div class="app-shell">
+      <header class="app-header">
+        <div>
+          <h1>Sierra Club Huts</h1>
+          <p>Transparent reservation requests and lottery assignment</p>
+        </div>
+        <div id="session-info"></div>
+      </header>
+
+      <section id="login-card" class="panel login-panel">
+        <h2>Login Link Parameters</h2>
+        <p>Use the email + code from your login link.</p>
+        <form id="login-form">
+          <label>Email
+            <input type="email" id="login-email" required />
+          </label>
+          <label>Code
+            <input type="number" id="login-hash" required />
+          </label>
+          <button type="submit">Login</button>
+        </form>
+        <div id="login-error" class="error"></div>
+      </section>
+
+      <main id="main-app" class="hidden">
+        <nav class="tabs">
+          <button data-tab="profile" class="active">Profile</button>
+          <button data-tab="requests">Requests</button>
+          <button data-tab="admin" id="admin-tab-btn" class="hidden">Admin</button>
+        </nav>
+
+        <section id="tab-profile" class="tab-content panel"></section>
+        <section id="tab-requests" class="tab-content panel hidden"></section>
+        <section id="tab-admin" class="tab-content panel hidden"></section>
+      </main>
+    </div>
+
+    <template id="request-card-template">
+      <article class="request-card">
+        <button class="expand-toggle" type="button">+</button>
+        <div class="request-summary"></div>
+        <div class="request-details hidden"></div>
+      </article>
+    </template>
+
+    <script src="/js/app.js" defer></script>
+  </body>
+</html>
