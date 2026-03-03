@@ -20,3 +20,15 @@ In the availability view:
 * The yellow cells are vulnerable in a lottery because other group(s) have pending requests of the same priority.  You may want to find other dates or choose more huts or reduce your group size.
 * The pink cells are not available because of higher-priority requests.    Find other dates or choose more huts or reduce your group size.  Or, you can hope the other requestor(s) change their requests before the cut-off date.
 
+### For administrators
+
+Some first-time bootstrap startup commands
+```bash
+# set the salt for authentication.  you may want to change this every season.
+$env:EMAIL_HASH_SALT='choose a salt phrase here'
+
+# bootstrap admin login by getting your own code (also modify requestors.tsv to add yourself as a user)
+node -p "require('./src/services/auth.js').hashEmail('yourEmail@email.com')"
+
+npm start
+```
