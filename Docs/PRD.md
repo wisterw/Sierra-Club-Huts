@@ -93,7 +93,10 @@ For each of the cells (182 days x 4 huts), calculate but do not display the foll
 * Same-priority spots requested.   Sum the minimum requested spots for the same priority (same-numbered choice) as the selected request, across other users.  For requests open to multiple huts, divide the requested spots by the number of huts in the request.   
 * Same-priority groups requesting.  Count the number of distinct groups for that hut and date.  A lottery may choose between these groups.  
 
-Display to a precision of one-tenth of a spot the remaining hut capacity, which is the starting hut capacity (12 or 15) minus the higher-priority spots requested, minus the same-priority spots requested.
+Display to a precision of one-tenth of a spot the remaining hut capacity.  Remaining hut capacity = (
+* the starting hut capacity (12 or 15) minus
+* the higher-priority spots requested, minus
+* the same-priority spots requested).
 
 Style each cell as follows:
 
