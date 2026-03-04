@@ -22,6 +22,10 @@ function validateRequest(input) {
   if (!Number.isInteger(ideal) || ideal < 1 || ideal > 15) {
     return 'Ideal spots must be an integer between 1 and 15.';
   }
+  const maxCapacityForSelectedHuts = Math.min(...huts.map((hut) => HUT_CAPACITY[hut]));
+  if (ideal > maxCapacityForSelectedHuts) {
+    return `Ideal spots exceeds hut capacity (${maxCapacityForSelectedHuts}) for selected hut(s).`;
+  }
   if (!Number.isInteger(min) || min < 1 || min > ideal) {
     return 'Minimum spots must be between 1 and ideal spots.';
   }
@@ -80,8 +84,8 @@ function summarizeByChoice(requests, choiceNumber, excludeRequestorId) {
     date: row.date,
     hut: row.hut,
     capacity: row.capacity,
-    higherPrioritySpots: Number(row.higherPrioritySpots.toFixed(2)),
-    samePrioritySpots: Number(row.samePrioritySpots.toFixed(2)),
+    higherPrioritySpots: Number(row.higherPrioritySpots.toFixed(1)),
+    samePrioritySpots: Number(row.samePrioritySpots.toFixed(1)),
     samePriorityGroups: row.samePriorityGroups.size,
   }));
 }

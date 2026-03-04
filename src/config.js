@@ -8,7 +8,7 @@ const REQUESTS_FILE = path.join(DATA_DIR, 'requests.tsv');
 const HUTS = ['Benson', 'Bradley', 'Grubb', 'Ludlow'];
 const HUT_CAPACITY = {
   Benson: 12,
-  Bradley: 12,
+  Bradley: 15,
   Grubb: 15,
   Ludlow: 15,
 };

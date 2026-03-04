@@ -21,8 +21,8 @@ We will use tab-delimited, row/column style files suitable for a relational appr
   * Grubb.  Boolean  
   * Ludlow.  Boolean.  
   * Arrival (date).  Check-in date.   
-  * Departure (date).  Ending date (check-out) of the stay in that hut.  Must be after Arrival.  
-  * Choice\_Number (integer).  For example, 1 \= first choice, 2 \= second choice, etc.  
+  * Departure (date).  Ending date (check-out) of the hut stay.  Must be after Arrival.  
+  * Choice\_Number (integer).  For example, 1 \= first choice, 2 \= second choice, etc.  A combination trip will have the same choice number twice with contiguous (non-overlapping) dates, for example a first choice with Benson and another first choice with Bradley, and the arrival date for the second request matches the departure date for the first request.
   * Spots\_ideal.  Number of people requested.  Required to be between 1 and 15 (12 max for some huts).    
   * Spots\_min.  The fewest \# of spots the requestor would accept without going to their next choice.  
   * Hut\_granted.  Which hut was selected of the options.  

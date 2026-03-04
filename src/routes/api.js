@@ -59,8 +59,17 @@ router.post('/check-login', (req, res) => {
   }
 });
 
-router.post('/logout', requireAuth, (req, res) => {
-  req.session.destroy(() => res.json({ ok: true }));
+router.post('/logout', (req, res) => {
+  const finalize = () => {
+    res.clearCookie('huts.sid');
+    return res.json({ ok: true });
+  };
+
+  if (!req.session) {
+    return finalize();
+  }
+
+  return req.session.destroy(() => finalize());
 });
 
 router.get('/me', requireAuth, (req, res) => {
@@ -213,6 +222,24 @@ router.get('/admin/download/requestors', requireAuth, requireAdmin, (req, res) =
   res.setHeader('Content-Type', 'text/tab-separated-values; charset=utf-8');
   res.setHeader('Content-Disposition', 'attachment; filename="requestors.tsv"');
   return res.send(toTsv(headers, withRequests));
+});
+
+router.get('/admin/download/requestors-with-codes', requireAuth, requireAdmin, (req, res) => {
+  const rows = store.listRequestors().map((r) => ({
+    ...r,
+    Login_Code: (() => {
+      try {
+        return hashEmail(r.Email);
+      } catch {
+        return '';
+      }
+    })(),
+  }));
+
+  const headers = [...REQUESTORS_HEADERS, 'Login_Code'];
+  res.setHeader('Content-Type', 'text/tab-separated-values; charset=utf-8');
+  res.setHeader('Content-Disposition', 'attachment; filename="requestors-with-login-codes.tsv"');
+  return res.send(toTsv(headers, rows));
 });
 
 router.get('/admin/download/requests-joined', requireAuth, requireAdmin, (req, res) => {
