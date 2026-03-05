@@ -23,5 +23,5 @@ In the availability view:
 ### For administrators
 
 The app sends emails as one of the administrators and does not have its own email system.  Set up your account so the app can send emails as you.
-* adjust /etc/msmtprc to use the account name and password.  For Yahoo, this requires getting an app password which is distinct from the password you use to log in to yahoo mail.  See "Docs/setting up yahoo mail for email relay.png" for more information.  
+* adjust /etc/msmtprc to use the account name and password.  For Yahoo, this requires getting an app password which is distinct from the password you use to log in to yahoo mail.  See https://github.com/wisterw/Sierra-Club-Huts/blob/main/Docs/setting%20up%20yahoo%20mail%20for%20email%20relay.png for where to find this in Yahoo Mail.  
 * add yourself to data/requestors.tsv as an admin user.  You must be in the requestors file to receive a login code.
