@@ -34,6 +34,9 @@ We will use tab-delimited, row/column style files suitable for a relational appr
   * Creation\_date. (datetime).  When was the request created.  
   * Last\_mod\_date. (datetime).  When was this request last edited.
 
+## String constants
+The standard error message for authentication errors is "Login failure, please try again later or contact the hut administrator."
+
 ## Backend
 
 ### Endpoints available externally
@@ -49,11 +52,11 @@ Except for checkLogin, all of the backend endpoints require a valid session cook
 
 **checkLogin**.  This endpoint receives an email address and a login code, and takes the following steps:
 * strip any leading and trailing spaces.    
-* Check the email against the list of requestors (case-insensitive).  If the provided email doesn’t exist, log an error quietly in back end logs but return a generic failure to the front end ("credentials do not exist") to reduce the risk of user enumeration due to distinct error behavior.
-* Check the "last_failed_login" attribute for that user and verify that the current time is 1 minute or more after last_failed_login.  If less than 1 minute in the past, return an error "login failure, try again later."
-* Check the "code_generated_when" timestamp from the Requestors file.  If more than 10 minutes in the past, return an error "login failure, try agian later"
+* Check the email against the list of requestors (case-insensitive).  If the provided email doesn’t exist, log an error quietly in back end logs but return the standard error message to the front end to reduce the risk of user enumeration due to distinct error behavior.
+* Check the "last_failed_login" attribute for that user and verify that the current time is 1 minute or more after last_failed_login.  If less than 1 minute in the past, return the standard error message.
+* Check the "code_generated_when" timestamp from the Requestors file.  If more than 10 minutes in the past, return the standard error message.
 * Retrieve the code as persisted in the login_code column of the Requestors file.
-* Compare the result with the code entered in the web form.  If the codes match, return the user ID for the authenticated user.  If the codes do not match, return an error "login failure, try again later" and write the current time to  "last_failed_login" for that user.
+* Compare the result with the code entered in the web form.  If the codes match, return the user ID for the authenticated user.  If the codes do not match, return the standard error message and write the current time to  "last_failed_login" for that user.
 
 **Requestor.**  Endpoint to get and mutate details about a specific requestor\_id, including their requests.  Returns, and accepts, requestor details.  Admins can do this for all requestors.
 
