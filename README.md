@@ -22,13 +22,6 @@ In the availability view:
 
 ### For administrators
 
-Some first-time bootstrap startup commands
-```bash
-# set the salt for authentication.  you may want to change this every season.
-$env:EMAIL_HASH_SALT='choose a salt phrase here'
-
-# bootstrap admin login by getting your own code (also modify requestors.tsv to add yourself as a user)
-node -p "require('./src/services/auth.js').hashEmail('yourEmail@email.com')"
-
-npm start
-```
+The app sends emails as one of the administrators and does not have its own email system.  Set up your account so the app can send emails as you.
+* adjust /etc/msmtprc to use the account name and password.  For Yahoo, this requires getting an app password which is distinct from the password you use to log in to yahoo mail.  See "Docs/setting up yahoo mail for email relay.png" for more information.  
+* add yourself to data/requestors.tsv as an admin user.  You must be in the requestors file to receive a login code.

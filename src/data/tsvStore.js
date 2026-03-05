@@ -10,10 +10,12 @@ const REQUESTORS_HEADERS = [
   'Phone',
   'Comments',
   'Credits',
-  'Email_code_sent',
+  'login_code',
+  'code_generated_when',
   'Admin',
   'Creation_date',
   'Last_mod_date',
+  'last_failed_login',
 ];
 
 const REQUESTS_HEADERS = [
@@ -97,10 +99,12 @@ class TsvStore {
       Phone: r.Phone || '',
       Comments: r.Comments || '',
       Credits: Number(r.Credits || 0),
-      Email_code_sent: r.Email_code_sent || '',
+      login_code: Number.isInteger(Number(r.login_code)) ? Number(r.login_code) : 0,
+      code_generated_when: r.code_generated_when || r.Email_code_sent || '',
       Admin: boolFromAny(r.Admin),
       Creation_date: r.Creation_date || '',
       Last_mod_date: r.Last_mod_date || '',
+      last_failed_login: r.last_failed_login || '',
     }));
 
     this.requests = reqsParsed.rows.map((r) => ({
@@ -184,7 +188,9 @@ class TsvStore {
       existing.Comments = partial.Comments ?? existing.Comments;
       existing.Credits = Number(partial.Credits ?? existing.Credits);
       existing.Admin = partial.Admin !== undefined ? Boolean(partial.Admin) : existing.Admin;
-      existing.Email_code_sent = partial.Email_code_sent ?? existing.Email_code_sent;
+      existing.login_code = partial.login_code !== undefined ? Number(partial.login_code || 0) : existing.login_code;
+      existing.code_generated_when = partial.code_generated_when ?? existing.code_generated_when;
+      existing.last_failed_login = partial.last_failed_login ?? existing.last_failed_login;
       existing.Last_mod_date = now;
       this.markDirty();
       return existing;
@@ -203,10 +209,12 @@ class TsvStore {
       Phone: partial.Phone ?? '',
       Comments: partial.Comments ?? '',
       Credits: Number(partial.Credits ?? 0),
-      Email_code_sent: partial.Email_code_sent ?? '',
+      login_code: Number(partial.login_code || 0),
+      code_generated_when: partial.code_generated_when ?? partial.Email_code_sent ?? '',
       Admin: Boolean(partial.Admin),
       Creation_date: now,
       Last_mod_date: now,
+      last_failed_login: partial.last_failed_login ?? '',
     };
 
     this.requestors.push(existing);

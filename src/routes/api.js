@@ -1,13 +1,21 @@
 const express = require('express');
 const multer = require('multer');
 const { TsvStore, toTsv, REQUESTORS_HEADERS } = require('../data/tsvStore');
-const { normalizeEmail, hashEmail } = require('../services/auth');
+const {
+  generateLoginCode,
+  isOlderThanMinutes,
+  isWithinMinutes,
+  normalizeEmail,
+  sendLoginCodeEmail,
+  toFourDigitCode,
+} = require('../services/auth');
 const { validateRequest, summarizeByChoice } = require('../services/requestLogic');
 const { runAssignment, efficiencyReport, requestsJoinedReport } = require('../services/assignment');
 
 const upload = multer();
 const router = express.Router();
 const store = new TsvStore();
+const AUTH_FAILURE_MESSAGE = 'Login failure, please try again later or contact the hut administrator.';
 
 function toBoolean(v) {
   return v === true || v === 'true' || v === 'TRUE' || v === 1 || v === '1';
@@ -35,19 +43,58 @@ function requestorPayload(requestor) {
   };
 }
 
+router.post('/send-email', async (req, res) => {
+  try {
+    const email = normalizeEmail(req.body?.email);
+    const requestor = store.getRequestorByEmail(email);
+    if (!requestor) {
+      console.error(`sendEmail: unknown email: ${email}`);
+      return res.json({ ok: true, message: 'code sent' });
+    }
+
+    const code = generateLoginCode();
+    requestor.login_code = code;
+    requestor.code_generated_when = new Date().toISOString();
+    requestor.Last_mod_date = new Date().toISOString();
+    store.markDirty();
+
+    try {
+      await sendLoginCodeEmail(requestor.Email, code);
+    } catch (err) {
+      console.error(`sendEmail: sendmail failed for ${requestor.Email}:`, err.message);
+    }
+
+    return res.json({ ok: true, message: 'code sent' });
+  } catch (err) {
+    console.error('sendEmail: unexpected error:', err.message);
+    return res.json({ ok: true, message: 'code sent' });
+  }
+});
+
 router.post('/check-login', (req, res) => {
   try {
-    const email = normalizeEmail(req.body.email);
-    const providedHash = Number(req.body.hash);
+    const email = normalizeEmail(req.body?.email);
+    const providedCode = toFourDigitCode(req.body?.code);
     const requestor = store.getRequestorByEmail(email);
 
     if (!requestor) {
-      return res.status(404).json({ error: 'Requestor not found.' });
+      console.error(`checkLogin: unknown email: ${email}`);
+      return res.status(401).json({ error: AUTH_FAILURE_MESSAGE });
     }
 
-    const expected = hashEmail(email);
-    if (providedHash !== expected) {
-      return res.status(401).json({ error: 'Invalid login code.' });
+    if (isWithinMinutes(requestor.last_failed_login, 1)) {
+      return res.status(401).json({ error: AUTH_FAILURE_MESSAGE });
+    }
+
+    if (isOlderThanMinutes(requestor.code_generated_when, 10)) {
+      return res.status(401).json({ error: AUTH_FAILURE_MESSAGE });
+    }
+
+    if (providedCode === null || providedCode !== requestor.login_code) {
+      requestor.last_failed_login = new Date().toISOString();
+      requestor.Last_mod_date = new Date().toISOString();
+      store.markDirty();
+      return res.status(401).json({ error: AUTH_FAILURE_MESSAGE });
     }
 
     req.session.userId = requestor.Requestor_ID;
@@ -55,7 +102,8 @@ router.post('/check-login', (req, res) => {
       res.json({ userId: requestor.Requestor_ID, isAdmin: requestor.Admin });
     });
   } catch (err) {
-    res.status(400).json({ error: err.message });
+    console.error('checkLogin: unexpected error:', err.message);
+    res.status(401).json({ error: AUTH_FAILURE_MESSAGE });
   }
 });
 
@@ -186,7 +234,9 @@ router.post('/admin/upload-requestors', requireAuth, requireAdmin, upload.single
       Comments: cells[idx('Comments')] || '',
       Credits: Number(cells[idx('Credits')] || 0),
       Admin: toBoolean(cells[idx('Admin')]),
-      Email_code_sent: cells[idx('Email_code_sent')] || '',
+      login_code: cells[idx('login_code')] || '',
+      code_generated_when: cells[idx('code_generated_when')] || cells[idx('Email_code_sent')] || '',
+      last_failed_login: cells[idx('last_failed_login')] || '',
     });
     createdOrUpdated += 1;
   }
@@ -224,24 +274,6 @@ router.get('/admin/download/requestors', requireAuth, requireAdmin, (req, res) =
   return res.send(toTsv(headers, withRequests));
 });
 
-router.get('/admin/download/requestors-with-codes', requireAuth, requireAdmin, (req, res) => {
-  const rows = store.listRequestors().map((r) => ({
-    ...r,
-    Login_Code: (() => {
-      try {
-        return hashEmail(r.Email);
-      } catch {
-        return '';
-      }
-    })(),
-  }));
-
-  const headers = [...REQUESTORS_HEADERS, 'Login_Code'];
-  res.setHeader('Content-Type', 'text/tab-separated-values; charset=utf-8');
-  res.setHeader('Content-Disposition', 'attachment; filename="requestors-with-login-codes.tsv"');
-  return res.send(toTsv(headers, rows));
-});
-
 router.get('/admin/download/requests-joined', requireAuth, requireAdmin, (req, res) => {
   const requestorsById = new Map(store.listRequestors().map((r) => [r.Requestor_ID, r]));
   const joined = requestsJoinedReport(store.listRequests(), requestorsById);
@@ -264,20 +296,6 @@ router.post('/admin/run-assignment', requireAuth, requireAdmin, (req, res) => {
 
 router.get('/admin/efficiency-report', requireAuth, requireAdmin, (req, res) => {
   return res.json({ rows: efficiencyReport(store.listRequests()) });
-});
-
-router.get('/admin/requestors', requireAuth, requireAdmin, (req, res) => {
-  const rows = store.listRequestors().map((r) => ({
-    ...r,
-    Login_Code: (() => {
-      try {
-        return hashEmail(r.Email);
-      } catch {
-        return '';
-      }
-    })(),
-  }));
-  return res.json({ rows });
 });
 
 module.exports = {

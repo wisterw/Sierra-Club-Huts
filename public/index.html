@@ -17,14 +17,15 @@
       </header>
 
       <section id="login-card" class="panel login-panel">
-        <h2>Login Link Parameters</h2>
-        <p>Use the email + code from your login link.</p>
+        <h2>Login</h2>
+        <p>Enter your email, request a code, then sign in.</p>
         <form id="login-form">
           <label>Email
             <input type="email" id="login-email" required />
           </label>
+          <button id="send-login-code" type="button">Send login code to email</button>
           <label>Code
-            <input type="number" id="login-hash" required />
+            <input type="number" id="login-code" required min="1000" max="9999" />
           </label>
           <button type="submit">Login</button>
         </form>

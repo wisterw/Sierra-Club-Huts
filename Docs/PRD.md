@@ -4,7 +4,7 @@ The Sierra Club runs 4 popular backcountry ski huts.  The huts are maintained by
 
 ## Proposal
 
-In economics, transparency can improve the allocation of a scarce resource by allowing different market participants to trade based on their distinct priorities. The club would prefer a lottery approach over a first-come/first-serve approach.  A web-based application summarizing existing anonymized requests will help more requestors get one of their top choices, and with fewer backup choices required.  Additionally, allowing participants to do their own data entry and automating the lottery will save time for the administrator.
+A web-based application summarizing existing requests will help requestors navigate around other requests, improving the chances that everyone gets one of their top choices.  Additionally, allowing participants to do their own data entry and automating the lottery will save time for the administrator.
 
 ## Summary
 
@@ -33,7 +33,7 @@ Requestors use a web browser to access the application.
 
 ### Authenticating users (login page)
 
-Instead of a password system, we will send a code to the email of record.  The code will be specific to the email and be valid for approximately 10 minutes.  The login page should show the following controls:
+Instead of a password system, we will send a code to the email of record.  The code will be valid for approximately 10 minutes.  The login page should show the following controls:
 * email.  Text field for user to enter their email.
 * "send login code to email" button.  This button should call the sendEmail endpoint.
 * code.  Numeric field for user to enter the 4-digit code they received in their email.

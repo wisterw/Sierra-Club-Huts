@@ -19,7 +19,8 @@ const el = {
   loginCard: document.getElementById('login-card'),
   loginForm: document.getElementById('login-form'),
   loginEmail: document.getElementById('login-email'),
-  loginHash: document.getElementById('login-hash'),
+  sendLoginCode: document.getElementById('send-login-code'),
+  loginCode: document.getElementById('login-code'),
   loginError: document.getElementById('login-error'),
   mainApp: document.getElementById('main-app'),
   sessionInfo: document.getElementById('session-info'),
@@ -639,7 +640,6 @@ async function renderAdmin() {
         <h3>Downloads</h3>
         <div class="inline-actions">
           <button data-dl="all">All requestors</button>
-          <button id="download-with-codes">All + login codes</button>
           <button data-dl="no-pending-requests">No pending</button>
           <button data-dl="no-likely-requests">No likely</button>
           <button data-dl="no-assigned-requests">No assigned</button>
@@ -657,11 +657,6 @@ async function renderAdmin() {
         <div id="assign-msg"></div>
         <div id="eff-table"></div>
       </div>
-      <div class="kpi-card">
-        <h3>Requestor Login Codes</h3>
-        <button id="load-codes">Load requestor codes</button>
-        <div id="codes-table"></div>
-      </div>
     </div>
   `;
 
@@ -676,10 +671,6 @@ async function renderAdmin() {
   for (const btn of el.tabAdmin.querySelectorAll('[data-dl]')) {
     btn.addEventListener('click', () => download(`/api/admin/download/requestors?filter=${btn.dataset.dl}`));
   }
-  document.getElementById('download-with-codes').addEventListener('click', () => {
-    download('/api/admin/download/requestors-with-codes');
-  });
-
   document.getElementById('download-joined').addEventListener('click', () => {
     download('/api/admin/download/requests-joined');
   });
@@ -699,13 +690,6 @@ async function renderAdmin() {
       : '<p>No confirmed assignments yet.</p>';
   });
 
-  document.getElementById('load-codes').addEventListener('click', async () => {
-    const data = await api('/admin/requestors');
-    const rows = data.rows || [];
-    document.getElementById('codes-table').innerHTML = `<table class="availability"><thead><tr><th>Email</th><th>Name</th><th>Code</th></tr></thead><tbody>${rows
-      .map((r) => `<tr><td>${r.Email}</td><td>${r.Name || ''}</td><td>${r.Login_Code}</td></tr>`)
-      .join('')}</tbody></table>`;
-  });
 }
 
 async function loadMeAndRender() {
@@ -727,24 +711,37 @@ async function loadMeAndRender() {
 async function tryAutoLoginFromUrl() {
   const params = new URLSearchParams(location.search);
   const email = params.get('email');
-  const hash = params.get('hash');
-  if (!email || !hash) return false;
+  const code = params.get('code') || params.get('hash');
+  if (!email || !code) return false;
 
   el.loginEmail.value = email;
-  el.loginHash.value = hash;
-  await api('/check-login', { method: 'POST', body: { email, hash: Number(hash) } });
+  el.loginCode.value = code;
+  await api('/check-login', { method: 'POST', body: { email, code: Number(code) } });
   await loadMeAndRender();
   return true;
 }
 
 function wireLogin() {
+  el.sendLoginCode.addEventListener('click', async () => {
+    el.loginError.textContent = '';
+    try {
+      await api('/send-email', {
+        method: 'POST',
+        body: { email: el.loginEmail.value },
+      });
+      el.loginError.textContent = 'If the email exists, a login code has been sent.';
+    } catch (err) {
+      el.loginError.textContent = err.message;
+    }
+  });
+
   el.loginForm.addEventListener('submit', async (e) => {
     e.preventDefault();
     el.loginError.textContent = '';
     try {
       await api('/check-login', {
         method: 'POST',
-        body: { email: el.loginEmail.value, hash: Number(el.loginHash.value) },
+        body: { email: el.loginEmail.value, code: Number(el.loginCode.value) },
       });
       await loadMeAndRender();
     } catch (err) {
