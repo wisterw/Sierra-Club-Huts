@@ -345,8 +345,8 @@ function renderRequestCard(choice, idx, activeIndex, container) {
       <label>Choice Number<input data-k="choiceNumber" type="number" min="1" value="${choice.choiceNumber}" /></label>
       <fieldset>
         <legend>Hut Choices (multi-select checkboxes)</legend>
-        <div>
-          ${ALL_HUT_MODES.map((m) => `<label><input type="checkbox" data-mode="${m}" ${choice.hutModes.includes(m) ? 'checked' : ''} /> ${m}</label>`).join(' ')}
+        <div class="checkbox-grid">
+          ${ALL_HUT_MODES.map((m) => `<label class="checkbox-option"><input type="checkbox" data-mode="${m}" ${choice.hutModes.includes(m) ? 'checked' : ''} /><span>${m}</span></label>`).join('')}
         </div>
         <small>Select one or more huts. You can select both combination trip options.</small>
       </fieldset>
@@ -440,7 +440,7 @@ function renderAvailability(container, choice) {
   const coverageMap = new Map(coverage.map((c) => [`${c.date}|${c.hut}`, c]));
   const selectedMin = Number(choice.spotsMin || choice.spotsIdeal || 1);
   const oneDecimal = (value) => Number(value || 0).toFixed(1);
-  const hutTotals = Object.fromEntries(HUTS.map((hut) => [hut, { higher: 0, same: 0 }]));
+  const hutTotals = Object.fromEntries(HUTS.map((hut) => [hut, { remaining: 0 }]));
 
   const tbl = document.createElement('table');
   tbl.className = 'availability';
@@ -466,8 +466,7 @@ function renderAvailability(container, choice) {
     if (dayName === 'Sat' || dayName === 'Sun') dayTd.classList.add('weekend');
     tr.appendChild(dayTd);
 
-    let dayHigherTotal = 0;
-    let daySameTotal = 0;
+    let dayRemainingTotal = 0;
     for (const hut of HUTS) {
       const td = document.createElement('td');
       const stats = summaryMap.get(`${dayKey}|${hut}`) || {
@@ -494,18 +493,16 @@ function renderAvailability(container, choice) {
       }
 
       td.title = `Capacity: ${stats.capacity}\nHigher-priority spots: ${oneDecimal(stats.higherPrioritySpots)}\nSame-priority spots: ${oneDecimal(stats.samePrioritySpots)}\nSame-priority groups: ${stats.samePriorityGroups}`;
-      td.textContent = `${oneDecimal(stats.higherPrioritySpots)}/${oneDecimal(stats.samePrioritySpots)}`;
+      td.textContent = oneDecimal(remAfterSame);
       tr.appendChild(td);
 
-      dayHigherTotal += Number(stats.higherPrioritySpots || 0);
-      daySameTotal += Number(stats.samePrioritySpots || 0);
-      hutTotals[hut].higher += Number(stats.higherPrioritySpots || 0);
-      hutTotals[hut].same += Number(stats.samePrioritySpots || 0);
+      dayRemainingTotal += Number(remAfterSame || 0);
+      hutTotals[hut].remaining += Number(remAfterSame || 0);
     }
 
     const totalTd = document.createElement('td');
-    totalTd.title = `All huts total\nHigher-priority spots: ${oneDecimal(dayHigherTotal)}\nSame-priority spots: ${oneDecimal(daySameTotal)}`;
-    totalTd.textContent = `${oneDecimal(dayHigherTotal)}/${oneDecimal(daySameTotal)}`;
+    totalTd.title = `All huts total remaining capacity: ${oneDecimal(dayRemainingTotal)}`;
+    totalTd.textContent = oneDecimal(dayRemainingTotal);
     tr.appendChild(totalTd);
 
     body.appendChild(tr);
@@ -520,14 +517,14 @@ function renderAvailability(container, choice) {
     for (const colHut of HUTS) {
       const td = document.createElement('td');
       if (colHut === hut) {
-        td.textContent = `${oneDecimal(hutTotals[hut].higher)}/${oneDecimal(hutTotals[hut].same)}`;
+        td.textContent = oneDecimal(hutTotals[hut].remaining);
       } else {
         td.textContent = '-';
       }
       tr.appendChild(td);
     }
     const allTd = document.createElement('td');
-    allTd.textContent = `${oneDecimal(hutTotals[hut].higher)}/${oneDecimal(hutTotals[hut].same)}`;
+    allTd.textContent = oneDecimal(hutTotals[hut].remaining);
     tr.appendChild(allTd);
     foot.appendChild(tr);
   }

@@ -42,13 +42,13 @@ We will use tab-delimited, row/column style files suitable for a relational appr
 
 Except for checkLogin, all of the backend endpoints require a valid session cookie.  These can be REST-based interfaces, or some other approach could work also.
 
-**checkLogin**.  receives a hash and email address from frontend as input (these are likely parsed from the login link the requestor has received).
-
+**checkLogin**.  This endpoint receives an email address and optional hash, and takes the following steps:
 * Uppercase the email and strip any leading and trailing spaces.    
 * Check the email against the list of requestors to retrieve the user ID.  If it doesn’t exist, return an error.  
-* Call hashEmail with the email.  Compare the result with the provided hash.  
-  * If the hashes match, return the user ID for the authenticated user.  
-  * If the hashes do not match, return an error.
+* Call hashEmail with the email address and capture the returned code.
+  * For the sendEmail method, use a local sendmail endpoint to email the code to the verified address.
+  * For the verify method, compare the result with the provided hash.  If the hashes match, return the user ID for the authenticated user.  Otherwise, return an error.
+* trap any errors from these steps and send them back to the front end; otherwise send the received error.
 
 **Requestor.**  Endpoint to get and mutate details about a specific requestor\_id, including their requests.  Returns, and accepts, requestor details.  Admins can do this for all requestors.
 

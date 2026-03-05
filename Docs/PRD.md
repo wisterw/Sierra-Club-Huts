@@ -31,9 +31,13 @@ Write a multi-user web-based application for a community of requestors to self-m
 
 Requestors use a web browser to access the application. 
 
-### Authenticating users
+### Authenticating users (login page)
 
-Instead of a password system, we will use a login link sent by email.  To login, users will click a link in an email.  In this link there will be 2 URL parameters: the email address for the account, and a secret code tied to that email. Pass these parameters to checkLogin to authenticate.  
+Instead of a password system, we will send a code to the email of record.  The code will be specific to the email and be time-invariant.  The login page should show the following controls:
+* email.  Text field for user to enter their email.
+* "send code to email" button.  In smaller static text below the button we can say "first-time users" since the code doesn't change over time.  This button should call the sendEmail method of the "checkLogin" endpoint.
+* code.  Numeric field for user to enter the 4-digit code they received in their email.
+* "Login" button.  This button should call the verify method of the "checkLogin" endpoint.
 
 When a user returns to the application after successfully logging in from that same browser and device, the application should remember them.  Otherwise they can retrieve the original email and use the included link.
 
