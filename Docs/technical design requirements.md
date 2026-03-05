@@ -36,7 +36,7 @@ We will use tab-delimited, row/column style files suitable for a relational appr
 
 ## Constants and settings
 The standard error message for authentication errors is "Login failure, please try again later or contact the hut administrator."
-For sending email, use msmtp as a mail relay.  The binary for msmtp is at /usr/bin/msmtp . Use the account named mail_relay_credentials in /etc/msmtprc
+For sending email, use msmtp as a mail relay via nodemailer. Use the account named mail_relay_credentials in /etc/msmtprc The binary for msmtp is at /usr/bin/msmtp 
 
 ## Backend
 
