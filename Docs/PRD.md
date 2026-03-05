@@ -74,8 +74,12 @@ This panel occupies the left of the Requests tab and shows the list of the user�
   * Departure / check-in (date picker).  Required.  
   * Ideal spots requested (free-form integer). Between 1 and 15\.  Required.  
   * Minimum spots requested.  Integer between 1 and the ideal spots requested (inclusive).  Optional.  
-  * Traverse date (date picker).  Available only if a combination hut is selected.  Required if a combination hut is selected.    
+  * Traverse date (date picker).  Available only if a combination hut is selected.  Required if a combination hut(s) is/are selected.    
 * Each request has a “save” button and a “delete request” button below the data entry fields.  
+* Layout proposals
+  * can put the Arrival and Departure dates side-by-side to save vertical space.
+  * can list the hut options in two columns to save vertical space.
+  * can put the Ideal and Minimum spots side-by-side to save vertical space.
 * The Request list works with the Requestor endpoint to add, remove, and adjust requests.  
 * Treat combination / traverse requests as two separate requests of the same priority.  The traverse date is the departure / checkout date from the first hut, and also the arrival / checkin date for the second hut.
 
@@ -104,7 +108,7 @@ Display to a precision of one-tenth of a spot the remaining hut capacity.  Remai
 
 Style each cell as follows:
 
-* Heavy border around the currently selected request hut(s) and date(s).  Check-in days are outlined with a heavy diagonal line from the lower left to upper right of the cell, and down the right side.  Check-out days also use a diagonal line from the lower left to the upper right corner, but with the left side also outlined.  Days in the request that are in the middle of the stay apply the outline to both the left and right sides of the cell.  In this way, each stay looks like a parallelogram.  
+* Heavy border around the currently selected request hut(s) and date(s).  
 * Shade yellow if the minimum spots requested is greater than (the hut capacity minus the higher-priority spots requested, minus the same-priority spots requested).   Yellow cells are “subject to lottery.”  
 * Shade the cell light red or pink if the minimum spots requested is greater than (the hut capacity minus the higher-priority spots requested).  Pink cells are “unlikely at present.”
 * Otherwise the cells don't need to be shaded at all.

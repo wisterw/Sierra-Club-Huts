@@ -1,3 +1,5 @@
+const fs = require('fs');
+
 function normalizeEmail(email) {
   return String(email || '').trim().toUpperCase();
 }
@@ -45,21 +47,44 @@ function toFourDigitCode(value) {
 }
 
 async function sendLoginCodeEmail(email, code) {
-  const sendmailEndpoint = process.env.LOCAL_SENDMAIL_ENDPOINT;
-  if (!sendmailEndpoint) {
+  const msmtpPath = process.env.MSMTP_PATH || '/usr/bin/msmtp';
+  const msmtpConfig = process.env.MSMTP_CONFIG || '/etc/msmtprc';
+  const msmtpAccount = process.env.MSMTP_ACCOUNT || 'mail_relay_credentials';
+  const from = process.env.LOGIN_EMAIL_FROM || '';
+
+  if (!fs.existsSync(msmtpPath)) {
     console.info(`Login code for ${email}: ${code}`);
     return;
   }
 
-  await fetch(sendmailEndpoint, {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({
-      to: email,
-      subject: 'Sierra Club Huts login code',
-      text: `Your login code is ${code}. It expires in 10 minutes.`,
-    }),
+  let nodemailer;
+  try {
+    // Optional dependency so development can still run without local msmtp wiring.
+    // eslint-disable-next-line global-require
+    nodemailer = require('nodemailer');
+  } catch (err) {
+    console.error('sendEmail: nodemailer is required for msmtp relay.');
+    throw err;
+  }
+
+  const transport = nodemailer.createTransport({
+    sendmail: true,
+    newline: 'unix',
+    path: msmtpPath,
+    // Use msmtp's native options for account + config file.
+    args: ['-i', '-a', msmtpAccount, '-C', msmtpConfig],
   });
+
+  const message = {
+    to: email,
+    subject: 'Sierra Club Huts login code',
+    text: `Your login code is ${code}. It expires in 10 minutes.`,
+  };
+  if (from) {
+    message.from = from;
+  }
+
+  await transport.sendMail(message);
 }
 
 function assertNormalizedEmailLength(email) {

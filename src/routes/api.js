@@ -61,7 +61,17 @@ router.post('/send-email', async (req, res) => {
     try {
       await sendLoginCodeEmail(requestor.Email, code);
     } catch (err) {
-      console.error(`sendEmail: sendmail failed for ${requestor.Email}:`, err.message);
+      console.error(
+        `sendEmail: sendmail failed for ${requestor.Email}:`,
+        err && {
+          message: err.message,
+          code: err.code,
+          command: err.command,
+          response: err.response,
+          responseCode: err.responseCode,
+          stack: err.stack,
+        }
+      );
     }
 
     return res.json({ ok: true, message: 'code sent' });
