@@ -23,6 +23,7 @@ In the availability view:
 ### For administrators
 
 The app sends emails as one of the administrators and does not have its own email system.  Set up your account so the app can send emails as you.
+* adjust /data/requestors.tsv locally.  this has real email addresses, as long as the repository is public we do not want them displayed.
 * adjust /etc/msmtprc to use the account name and password.  For Yahoo, this requires getting an app password which is distinct from the password you use to log in to yahoo mail.  See https://github.com/wisterw/Sierra-Club-Huts/blob/main/Docs/setting%20up%20yahoo%20mail%20for%20email%20relay.png for where to find this in Yahoo Mail.  
 * set the mail relay environment variables before starting the app:
   * `MSMTP_PATH` (default: `/usr/bin/msmtp`)
