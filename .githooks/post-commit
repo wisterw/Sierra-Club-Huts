@@ -1,0 +1,8 @@
+#!/bin/sh
+changed="$(git diff-tree --no-commit-id --name-only -r HEAD)"
+
+# Trigger only when any Markdown file under Docs/ changed in this commit.
+echo "$changed" | grep -Eq '^Docs/.*\.md$' || exit 0
+
+# Replace with your actual Codex CLI command if needed.
+codex run "Review the latest Docs markdown changes from HEAD commit and summarize risks/actions."

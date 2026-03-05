@@ -33,11 +33,11 @@ Requestors use a web browser to access the application.
 
 ### Authenticating users (login page)
 
-Instead of a password system, we will send a code to the email of record.  The code will be specific to the email and be time-invariant.  The login page should show the following controls:
+Instead of a password system, we will send a code to the email of record.  The code will be specific to the email and be valid for approximately 10 minutes.  The login page should show the following controls:
 * email.  Text field for user to enter their email.
-* "send code to email" button.  In smaller static text below the button we can say "first-time users" since the code doesn't change over time.  This button should call the sendEmail method of the "checkLogin" endpoint.
+* "send login code to email" button.  This button should call the sendEmail endpoint.
 * code.  Numeric field for user to enter the 4-digit code they received in their email.
-* "Login" button.  This button should call the verify method of the "checkLogin" endpoint.
+* "Login" button.  This button should call the checkLogin endpoint.
 
 When a user returns to the application after successfully logging in from that same browser and device, the application should remember them.  Otherwise they can retrieve the original email and use the included link.
 

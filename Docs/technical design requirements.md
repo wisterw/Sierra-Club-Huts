@@ -13,6 +13,7 @@ We will use tab-delimited, row/column style files suitable for a relational appr
   * Admin (boolean).  Does this person have admin rights.  
   * Creation\_date. (datetime).  When was the user record created.  
   * Last\_mod\_date. (datetime).  When was this user record last edited.
+  * last\_failed\_login (datetime).  When was the last bad login code entered (for limiting brute force attacks)
 
 * Requests.  The primary key consists of four columns: Requestor\_ID, Hut, arrival date, and departure date.  
   * Requestor\_ID (Integer).  
@@ -34,21 +35,24 @@ We will use tab-delimited, row/column style files suitable for a relational appr
 
 ## Backend
 
-### Internal functions
-
-**hashEmail:** given an arbitrary text string of length 1-100 characters, returns an integer between 1000 and 9999\.  Include before the final hash calculation a secret salt string which is provided at deployment time and is not stored in the code.  This call is only available within the backend, it is not exposed externally.
-
 ### Endpoints available externally
 
 Except for checkLogin, all of the backend endpoints require a valid session cookie.  These can be REST-based interfaces, or some other approach could work also.
 
-**checkLogin**.  This endpoint receives an email address and optional hash, and takes the following steps:
-* Uppercase the email and strip any leading and trailing spaces.    
-* Check the email against the list of requestors to retrieve the user ID.  If it doesn’t exist, return an error.  
-* Call hashEmail with the email address and capture the returned code.
-  * For the sendEmail method, use a local sendmail endpoint to email the code to the verified address.
-  * For the verify method, compare the result with the provided hash.  If the hashes match, return the user ID for the authenticated user.  Otherwise, return an error.
-* trap any errors from these steps and send them back to the front end; otherwise send the received error.
+**sendEmail**.  This endpoint receives an email address from a user and enables valid users to login to the app:
+* Strip any leading and trailing spaces.    
+* Check the email against the list of requestors to retrieve the user ID (case insensitive lookup).  If the provided email doesn’t exist, log an error quietly in back-end logs but return success to the front end ("code sent") to reduce the risk of user enumeration due to distinct error behavior.
+* if the provided email exists in the requestors file, generate a 4-digit random integer from 1000-9999.
+* write/persist the integer to the requestors file.  Write also the current time to the "code_generated_when" timestamp.  
+* Use a local sendmail endpoint to email the code to the verified address.
+
+**checkLogin**.  This endpoint receives an email address and a login code, and takes the following steps:
+* strip any leading and trailing spaces.    
+* Check the email against the list of requestors (case-insensitive).  If the provided email doesn’t exist, log an error quietly in back end logs but return a generic failure to the front end ("credentials do not exist") to reduce the risk of user enumeration due to distinct error behavior.
+* Check the "last_failed_login" attribute for that user and verify that the current time is 1 minute or more after last_failed_login.  If less than 1 minute in the past, return an error "Too many failures, try again later."
+* Check the "code_generated_when" timestamp from the Requestors file.  If more than 10 minutes in the past, return an error "code expired, please try again."
+* Retrieve the code as persisted in the Requestors file.
+* Compare the result with the code entered in the web form.  If the codes match, return the user ID for the authenticated user.  If the codes do not match, return an error "Either the email or the code is invalid, please try again after 1 minute" and write the current time to  "last_failed_login" for that user.
 
 **Requestor.**  Endpoint to get and mutate details about a specific requestor\_id, including their requests.  Returns, and accepts, requestor details.  Admins can do this for all requestors.
 
