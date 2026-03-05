@@ -9,7 +9,8 @@ We will use tab-delimited, row/column style files suitable for a relational appr
   * Phone (string).  Backup communication method.   May be null.  
   * Comments (string).  May be null.  
   * Credits (integer).  Required.  Users with more credits are higher priority and will get to choose first.  
-  * Email\_code\_sent (Datetime).  may be null.  For debugging, when did we send their email code most recently.  
+  * login_code (integer).  May be null if never logged in.
+  * code_generated_when (Datetime).  may be null.  For code expiry, when did we send their email code most recently.  
   * Admin (boolean).  Does this person have admin rights.  
   * Creation\_date. (datetime).  When was the user record created.  
   * Last\_mod\_date. (datetime).  When was this user record last edited.
@@ -43,7 +44,7 @@ Except for checkLogin, all of the backend endpoints require a valid session cook
 * Strip any leading and trailing spaces.    
 * Check the email against the list of requestors to retrieve the user ID (case insensitive lookup).  If the provided email doesn’t exist, log an error quietly in back-end logs but return success to the front end ("code sent") to reduce the risk of user enumeration due to distinct error behavior.
 * if the provided email exists in the requestors file, generate a 4-digit random integer from 1000-9999.
-* write/persist the integer to the requestors file.  Write also the current time to the "code_generated_when" timestamp.  
+* write/persist the integer to the login_code column of the requestors file.  Write also the current time to the "code_generated_when" timestamp.  
 * Use a local sendmail endpoint to email the code to the verified address.
 
 **checkLogin**.  This endpoint receives an email address and a login code, and takes the following steps:
@@ -51,7 +52,7 @@ Except for checkLogin, all of the backend endpoints require a valid session cook
 * Check the email against the list of requestors (case-insensitive).  If the provided email doesn’t exist, log an error quietly in back end logs but return a generic failure to the front end ("credentials do not exist") to reduce the risk of user enumeration due to distinct error behavior.
 * Check the "last_failed_login" attribute for that user and verify that the current time is 1 minute or more after last_failed_login.  If less than 1 minute in the past, return an error "Too many failures, try again later."
 * Check the "code_generated_when" timestamp from the Requestors file.  If more than 10 minutes in the past, return an error "code expired, please try again."
-* Retrieve the code as persisted in the Requestors file.
+* Retrieve the code as persisted in the login_code column of the Requestors file.
 * Compare the result with the code entered in the web form.  If the codes match, return the user ID for the authenticated user.  If the codes do not match, return an error "Either the email or the code is invalid, please try again after 1 minute" and write the current time to  "last_failed_login" for that user.
 
 **Requestor.**  Endpoint to get and mutate details about a specific requestor\_id, including their requests.  Returns, and accepts, requestor details.  Admins can do this for all requestors.

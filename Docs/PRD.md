@@ -122,7 +122,6 @@ The admin tab has a clickable list of available actions.  Actions include:
 * Upload list of requestors from a tab-delimited file.  This will create new records where a requestor’s email does not exist already, and update records where the email is already present.  
 * Download lists of requestors, with requests if assigned or blank if not.  Available filters / sublinks:  
   1. All requestors  
-  #. All requestors including with the login code (hashed from the email address).  This enables the administrator to email login credentials to the volunteers.
   2. No pending requests  
   3. No likely requests  
   4. No assigned requests  
