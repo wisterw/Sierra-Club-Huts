@@ -39,7 +39,7 @@ Instead of a password system, we will send a code to the email of record.  The c
 * code.  Numeric field for user to enter the 4-digit code they received in their email.
 * "Login" button.  This button should call the checkLogin endpoint.
 
-When a user returns to the application after successfully logging in from that same browser and device, the application should remember them.  Otherwise they can retrieve the original email and use the included link.
+When a user returns to the application within 7 days of a successful login using that same browser, the application should remember them.  If after 7 days, they can ask for a new code to be emailed.
 
 ### Profile tab
 

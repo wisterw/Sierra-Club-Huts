@@ -181,20 +181,7 @@ button:hover { border-color: var(--accent); }
 .status-lottery { background: var(--warn); }
 .status-risk { background: var(--risk); }
 .user-cell {
-  border-top: 2px solid #1b2f20 !important;
-  border-bottom: 2px solid #1b2f20 !important;
-}
-.user-mid {
-  border-left: 2px solid #1b2f20 !important;
-  border-right: 2px solid #1b2f20 !important;
-}
-.user-in {
-  border-right: 2px solid #1b2f20 !important;
-  background-image: linear-gradient(135deg, transparent 47%, #1b2f20 49%, #1b2f20 51%, transparent 53%);
-}
-.user-out {
-  border-left: 2px solid #1b2f20 !important;
-  background-image: linear-gradient(135deg, transparent 47%, #1b2f20 49%, #1b2f20 51%, transparent 53%);
+  border: 2px solid #1b2f20 !important;
 }
 
 .kpi-grid {

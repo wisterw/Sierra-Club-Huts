@@ -369,7 +369,15 @@ function renderRequestCard(choice, idx, activeIndex, container) {
       input.addEventListener('input', (e) => {
         const key = e.target.dataset.k;
         state.choices[idx][key] = e.target.type === 'number' ? Number(e.target.value || 0) : e.target.value;
-        renderRequests();
+      });
+      input.addEventListener('change', () => {
+        const maxSpotsNow = maxSpotsForModes(state.choices[idx].hutModes || []);
+        if (state.choices[idx].spotsIdeal > maxSpotsNow) {
+          state.choices[idx].spotsIdeal = maxSpotsNow;
+        }
+        if (state.choices[idx].spotsMin > state.choices[idx].spotsIdeal) {
+          state.choices[idx].spotsMin = state.choices[idx].spotsIdeal;
+        }
       });
     }
     for (const cb of details.querySelectorAll('[data-mode]')) {
@@ -488,9 +496,6 @@ function renderAvailability(container, choice) {
       const hit = coverageMap.get(`${dayKey}|${hut}`);
       if (hit) {
         td.classList.add('user-cell');
-        if (dayKey === hit.arrival) td.classList.add('user-in');
-        else if (dayKey === hit.departure) td.classList.add('user-out');
-        else td.classList.add('user-mid');
       }
 
       td.title = `Capacity: ${stats.capacity}\nHigher-priority spots: ${oneDecimal(stats.higherPrioritySpots)}\nSame-priority spots: ${oneDecimal(stats.samePrioritySpots)}\nSame-priority groups: ${stats.samePriorityGroups}`;
