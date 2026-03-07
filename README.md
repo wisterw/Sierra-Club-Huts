@@ -1,8 +1,8 @@
-The Sierra Club hut volunteers earn early reservation privileges through their service each fall.  Voles (Volunteer Engage and Ski) is a web-based application for the volunteers to enter their reservation requests.  The application shows the total spots requested so far for each hut-date combination, allowing requestors to adjust their requests and reduce overlap with other requestors.  It also saves time for the hut coordinator.
+The Sierra Club hut volunteers earn early reservation privileges through their service each fall.  This is a web-based application for the volunteers to enter their reservation requests.  The application shows the total spots requested so far for each hut-date combination, allowing requestors to adjust their requests and reduce overlap with other requestors.  It also saves time for the hut coordinator.
 
 ### Authenticating users
 
-You will receive an email with a login link.  Click the link to login to Voles.  Come back to this email or bookmark the link -- it will work for the reservation period and there is no other password.
+Your email has already been recorded in the system by the work party leaders.  When you enter your email we will send a temporary code to that email if it is in the system. 
 
 ### Profile tab
 
