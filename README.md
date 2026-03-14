@@ -31,3 +31,50 @@ The app sends emails as one of the administrators and does not have its own emai
   * `MSMTP_ACCOUNT` (default: `mail_relay_credentials`)
   * `LOGIN_EMAIL_FROM` (optional but recommended if your relay enforces sender address)
 * add yourself to data/requestors.tsv as an admin user.  You must be in the requestors file to receive a login code.
+
+### Deploying to AWS EC2 (quick guide)
+
+These steps assume an Ubuntu instance, but the same ideas apply to other distros.
+
+1. Launch an EC2 instance and attach an EBS volume if you want data persistence beyond the instance lifecycle.
+1. In the security group, allow inbound `22` (SSH) and either `80/443` (recommended with a reverse proxy) or the app port (default `3000`) if you plan to expose it directly.
+1. SSH into the instance and install Node.js LTS plus build tools.
+1. Clone this repo onto the instance and run `npm install`.
+1. Create a systemd service (recommended) to keep the app running after reboots.
+1. Configure environment variables (see list below).
+1. Start the service and confirm you can load the site.
+
+**Recommended environment variables**
+* `NODE_ENV=production`
+* `PORT=3000` (or another port if you put the app behind Nginx/ALB)
+* `SESSION_SECRET` (required in production)
+* `TRUST_PROXY=1` (set to `1` if you terminate TLS at a load balancer or reverse proxy)
+* `SESSION_SECURE=true` (set to `true` only when requests reach the app over HTTPS)
+* `PUBLIC_HOST` (optional: the DNS name you want to show in logs)
+* `PUBLIC_SCHEME` (optional: `https` if you want logs to show HTTPS)
+* Mail relay variables from the section above if you want login codes emailed.
+
+**Systemd example**
+```ini
+[Unit]
+Description=Sierra Club Huts app
+After=network.target
+
+[Service]
+Type=simple
+WorkingDirectory=/opt/sierra-club-huts
+Environment=NODE_ENV=production
+Environment=PORT=3000
+Environment=SESSION_SECRET=change-me
+Environment=TRUST_PROXY=1
+Environment=SESSION_SECURE=true
+ExecStart=/usr/bin/node src/server.js
+Restart=on-failure
+User=ubuntu
+
+[Install]
+WantedBy=multi-user.target
+```
+
+**Reverse proxy note**
+If you want HTTPS, terminate TLS with an AWS load balancer or Nginx and forward to `http://127.0.0.1:3000`. When you do this, set `TRUST_PROXY=1` and `SESSION_SECURE=true` so cookies are marked secure only over HTTPS.
