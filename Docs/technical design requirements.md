@@ -49,7 +49,8 @@ Except for checkLogin, all of the backend endpoints require a valid session cook
 * Check the email against the list of requestors to retrieve the user ID (case insensitive lookup).  If the provided email doesn’t exist, log an error quietly in back-end logs but return success to the front end ("code sent") to reduce the risk of user enumeration due to distinct error behavior.
 * if the provided email exists in the requestors file, generate a 4-digit random integer from 1000-9999.
 * write/persist the integer to the login_code column of the requestors file.  Write also the current time to the "code_generated_when" timestamp.  
-* Use a local sendmail endpoint to email the code to the verified address.
+* Use msmtp to email the code to the verified address.  
+* For any internal errors caught while trying to send an email, append them to a local logfile 
 
 **checkLogin**.  This endpoint receives an email address and a login code, and takes the following steps:
 * strip any leading and trailing spaces.    
