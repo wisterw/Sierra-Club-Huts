@@ -1,5 +1,9 @@
 The Sierra Club hut volunteers earn early reservation privileges through their service each fall.  This is a web-based application for the volunteers to enter their reservation requests.  The application shows the total spots requested so far for each hut-date combination, allowing requestors to adjust their requests and reduce overlap with other requestors.  It also saves time for the hut coordinator.
 
+### Project specs and build notes
+
+The overall product spec is in `Docs/PRD.md`. Implementation guidance lives in `Docs/technical design requirements.md` and `Docs/AGENTS.md`. This project was originally built by Codex from those specs.
+
 ### Authenticating users
 
 Your email has already been recorded in the system by the work party leaders.  When you enter your email we will send a temporary code to that email if it is in the system. 

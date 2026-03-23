@@ -1,5 +1,7 @@
+const fs = require('fs');
 const express = require('express');
 const multer = require('multer');
+const { EMAIL_ERROR_LOG } = require('../config');
 const { TsvStore, toTsv, REQUESTORS_HEADERS } = require('../data/tsvStore');
 const {
   generateLoginCode,
@@ -16,6 +18,19 @@ const upload = multer();
 const router = express.Router();
 const store = new TsvStore();
 const AUTH_FAILURE_MESSAGE = 'Login failure, please try again later or contact the hut administrator.';
+
+function appendEmailErrorLog(email, err) {
+  try {
+    const line = [
+      new Date().toISOString(),
+      email || '',
+      err?.message || 'unknown error',
+    ].join('\t');
+    fs.appendFileSync(EMAIL_ERROR_LOG, `${line}\n`, 'utf8');
+  } catch (logErr) {
+    console.error('sendEmail: failed to write email error log:', logErr.message);
+  }
+}
 
 function toBoolean(v) {
   return v === true || v === 'true' || v === 'TRUE' || v === 1 || v === '1';
@@ -61,6 +76,7 @@ router.post('/send-email', async (req, res) => {
     try {
       await sendLoginCodeEmail(requestor.Email, code);
     } catch (err) {
+      appendEmailErrorLog(requestor.Email, err);
       console.error(
         `sendEmail: sendmail failed for ${requestor.Email}:`,
         err && {
