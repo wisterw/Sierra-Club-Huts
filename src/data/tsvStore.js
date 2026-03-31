@@ -6,7 +6,12 @@ const { normalizeEmail } = require('../services/auth');
 const REQUESTORS_HEADERS = [
   'Requestor_ID',
   'Email',
-  'Name',
+  'first_name',
+  'last_name',
+  'address',
+  'city',
+  'state',
+  'zip',
   'Phone',
   'Comments',
   'Credits',
@@ -68,21 +73,52 @@ class TsvStore {
     this.requestors = [];
     this.requests = [];
     this.dirty = false;
-    this.ensureFiles();
+    this.validateFiles();
     this.load();
     setInterval(() => this.flush(), 5000);
   }
 
-  ensureFiles() {
-    if (!fs.existsSync(DATA_DIR)) {
-      fs.mkdirSync(DATA_DIR, { recursive: true });
-    }
+  validateFiles() {
+    const ensureOpen = (filePath) => {
+      try {
+        const fd = fs.openSync(filePath, 'r+');
+        fs.closeSync(fd);
+      } catch (err) {
+        console.error(`Data file error: cannot open ${filePath}.`, err.message);
+        process.exit(1);
+      }
+    };
+
+    const validateHeader = (filePath, expected) => {
+      try {
+        const raw = fs.readFileSync(filePath, 'utf8');
+        const firstLine = raw.split(/\r?\n/)[0] || '';
+        const header = firstLine.replace(/^\uFEFF/, '').split('\t');
+        const matches = header.length === expected.length
+          && header.every((value, idx) => value === expected[idx]);
+        if (!matches) {
+          console.error(`Data file error: invalid header row in ${filePath}.`);
+          process.exit(1);
+        }
+      } catch (err) {
+        console.error(`Data file error: cannot read ${filePath}.`, err.message);
+        process.exit(1);
+      }
+    };
+
     if (!fs.existsSync(REQUESTORS_FILE)) {
-      fs.writeFileSync(REQUESTORS_FILE, `${REQUESTORS_HEADERS.join('\t')}\n`, 'utf8');
+      console.error(`Data file error: missing ${REQUESTORS_FILE}.`);
+      process.exit(1);
     }
     if (!fs.existsSync(REQUESTS_FILE)) {
-      fs.writeFileSync(REQUESTS_FILE, `${REQUESTS_HEADERS.join('\t')}\n`, 'utf8');
+      console.error(`Data file error: missing ${REQUESTS_FILE}.`);
+      process.exit(1);
     }
+
+    ensureOpen(REQUESTORS_FILE);
+    ensureOpen(REQUESTS_FILE);
+    validateHeader(REQUESTORS_FILE, REQUESTORS_HEADERS);
+    validateHeader(REQUESTS_FILE, REQUESTS_HEADERS);
   }
 
   load() {
@@ -95,7 +131,12 @@ class TsvStore {
     this.requestors = reqorsParsed.rows.map((r) => ({
       Requestor_ID: Number(r.Requestor_ID),
       Email: normalizeEmail(r.Email),
-      Name: r.Name || '',
+      first_name: r.first_name || '',
+      last_name: r.last_name || '',
+      address: r.address || '',
+      city: r.city || '',
+      state: r.state || '',
+      zip: r.zip || '',
       Phone: r.Phone || '',
       Comments: r.Comments || '',
       Credits: Number(r.Credits || 0),
@@ -120,7 +161,7 @@ class TsvStore {
       Spots_min: Number(r.Spots_min || 0),
       Hut_granted: r.Hut_granted || '',
       Spots_granted: Number(r.Spots_granted || 0),
-      Status: r.Status || 'pending',
+      Status: r.Status || 'requested',
       Confirmed_How: r.Confirmed_How || '',
       Creation_date: r.Creation_date || '',
       Last_mod_date: r.Last_mod_date || '',
@@ -183,7 +224,12 @@ class TsvStore {
     let existing = this.getRequestorByEmail(normalizedEmail);
 
     if (existing) {
-      existing.Name = partial.Name ?? existing.Name;
+      existing.first_name = partial.first_name ?? existing.first_name;
+      existing.last_name = partial.last_name ?? existing.last_name;
+      existing.address = partial.address ?? existing.address;
+      existing.city = partial.city ?? existing.city;
+      existing.state = partial.state ?? existing.state;
+      existing.zip = partial.zip ?? existing.zip;
       existing.Phone = partial.Phone ?? existing.Phone;
       existing.Comments = partial.Comments ?? existing.Comments;
       existing.Credits = Number(partial.Credits ?? existing.Credits);
@@ -205,7 +251,12 @@ class TsvStore {
     existing = {
       Requestor_ID: id,
       Email: normalizedEmail,
-      Name: partial.Name ?? '',
+      first_name: partial.first_name ?? '',
+      last_name: partial.last_name ?? '',
+      address: partial.address ?? '',
+      city: partial.city ?? '',
+      state: partial.state ?? '',
+      zip: partial.zip ?? '',
       Phone: partial.Phone ?? '',
       Comments: partial.Comments ?? '',
       Credits: Number(partial.Credits ?? 0),
@@ -227,7 +278,12 @@ class TsvStore {
     if (!existing) {
       return null;
     }
-    existing.Name = updates.Name ?? existing.Name;
+    existing.first_name = updates.first_name ?? existing.first_name;
+    existing.last_name = updates.last_name ?? existing.last_name;
+    existing.address = updates.address ?? existing.address;
+    existing.city = updates.city ?? existing.city;
+    existing.state = updates.state ?? existing.state;
+    existing.zip = updates.zip ?? existing.zip;
     existing.Phone = updates.Phone ?? existing.Phone;
     existing.Comments = updates.Comments ?? existing.Comments;
     if (updates.Credits !== undefined) {
@@ -246,7 +302,13 @@ class TsvStore {
     const rid = Number(id);
     this.requests = this.requests.filter((r) => r.Requestor_ID !== rid);
 
+    const orderedChoiceNumbers = [...new Set(
+      requests.map((r) => Number(r.Choice_Number)).filter((n) => Number.isFinite(n))
+    )].sort((a, b) => a - b);
+    const choiceMap = new Map(orderedChoiceNumbers.map((n, idx) => [n, idx + 1]));
+
     for (const input of requests) {
+      const normalizedChoice = choiceMap.get(Number(input.Choice_Number)) || 1;
       this.requests.push({
         Requestor_ID: rid,
         Benson: Boolean(input.Benson),
@@ -255,12 +317,12 @@ class TsvStore {
         Ludlow: Boolean(input.Ludlow),
         Arrival: input.Arrival,
         Departure: input.Departure,
-        Choice_Number: Number(input.Choice_Number),
+        Choice_Number: normalizedChoice,
         Spots_ideal: Number(input.Spots_ideal),
         Spots_min: Number(input.Spots_min || input.Spots_ideal),
         Hut_granted: input.Hut_granted || '',
         Spots_granted: Number(input.Spots_granted || 0),
-        Status: input.Status || 'pending',
+        Status: input.Status || 'requested',
         Confirmed_How: input.Confirmed_How || '',
         Creation_date: input.Creation_date || now,
         Last_mod_date: now,

@@ -28,7 +28,7 @@ app.use(
       httpOnly: true,
       sameSite: 'lax',
       secure: process.env.SESSION_SECURE === 'true',
-      maxAge: 1000 * 60 * 60 * 24 * 14,
+      maxAge: 1000 * 60 * 60 * 24 * 7,
     },
   })
 );

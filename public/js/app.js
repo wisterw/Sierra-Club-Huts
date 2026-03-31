@@ -51,8 +51,8 @@ async function api(path, options = {}) {
 
 function currentSeasonDates() {
   const year = new Date().getFullYear();
-  const start = new Date(Date.UTC(year, 11, 1));
-  const end = new Date(Date.UTC(year + 1, 4, 31));
+  const start = new Date(Date.UTC(year, 11, 15));
+  const end = new Date(Date.UTC(year + 1, 3, 30));
   const rows = [];
   const cur = new Date(start);
   while (cur <= end) {
@@ -75,7 +75,7 @@ function defaultChoice() {
     choiceNumber: state.choices.length + 1,
     spotsIdeal: 1,
     spotsMin: 1,
-    status: 'pending',
+    status: 'requested',
   };
 }
 
@@ -92,7 +92,7 @@ function normalizeChoice(choice, idx) {
     choiceNumber: Number(choice.choiceNumber || idx + 1),
     spotsIdeal: Number(choice.spotsIdeal || 1),
     spotsMin: Number(choice.spotsMin || choice.spotsIdeal || 1),
-    status: choice.status || 'pending',
+    status: choice.status || 'requested',
   };
 }
 
@@ -182,7 +182,7 @@ function expandChoice(choice) {
     Choice_Number: Number(choice.choiceNumber),
     Spots_ideal: Number(choice.spotsIdeal),
     Spots_min: Number(choice.spotsMin || choice.spotsIdeal),
-    Status: choice.status || 'pending',
+    Status: choice.status || 'requested',
     Hut_granted: '',
     Spots_granted: 0,
     Confirmed_How: '',
@@ -233,10 +233,59 @@ function expandChoice(choice) {
   return out;
 }
 
-function serializeChoices() {
-  return state.choices
-    .map((choice, idx) => normalizeChoice(choice, idx))
-    .flatMap((choice) => expandChoice(choice));
+function normalizeChoicesForSave() {
+  const normalized = state.choices.map((choice, idx) => normalizeChoice(choice, idx));
+  return normalized.map((choice, idx) => ({
+    ...choice,
+    choiceNumber: idx + 1,
+  }));
+}
+
+function validateChoiceForSave(choice) {
+  if (!choice.arrival || !choice.departure) {
+    throw new Error('Arrival and departure are required and departure must be after arrival.');
+  }
+  const arrival = new Date(choice.arrival);
+  const departure = new Date(choice.departure);
+  if (Number.isNaN(arrival.getTime()) || Number.isNaN(departure.getTime()) || departure <= arrival) {
+    throw new Error('Arrival and departure are required and departure must be after arrival.');
+  }
+
+  const maxTripMs = 1000 * 60 * 60 * 24 * 5;
+  if (departure.getTime() - arrival.getTime() > maxTripMs) {
+    throw new Error('Trip length must be 5 days or fewer.');
+  }
+
+  const year = arrival.getUTCFullYear();
+  const seasonStart = new Date(Date.UTC(year, 11, 15));
+  const seasonEnd = new Date(Date.UTC(year + 1, 3, 30, 23, 59, 59, 999));
+  if (arrival < seasonStart || departure > seasonEnd) {
+    throw new Error('Arrival and departure must be between Dec 15 and Apr 30 of the current season.');
+  }
+
+  if (Number(choice.spotsMin || choice.spotsIdeal) > Number(choice.spotsIdeal)) {
+    throw new Error('Minimum spots must be between 1 and ideal spots.');
+  }
+
+  const comboSelected = (choice.hutModes || []).some((m) => COMBO_MODES.includes(m));
+  if (comboSelected) {
+    if (!choice.traverseDate) {
+      throw new Error('Traverse date is required for combination huts.');
+    }
+    const traverse = new Date(choice.traverseDate);
+    if (Number.isNaN(traverse.getTime()) || traverse <= arrival || traverse >= departure) {
+      throw new Error('Traverse date must be after arrival and before departure.');
+    }
+  }
+}
+
+function serializeChoices(choices = state.choices) {
+  return choices
+    .map((choice) => {
+      validateChoiceForSave(choice);
+      return expandChoice(choice);
+    })
+    .flat();
 }
 
 function setTab(tabName) {
@@ -256,7 +305,8 @@ function wireTabs() {
 
 function renderSession() {
   if (!state.me) return;
-  el.sessionInfo.innerHTML = `<div><strong>${state.me.Name || state.me.Email}</strong><br/><small>${state.me.Email}</small></div><button id="logout-btn">Logout</button>`;
+  const displayName = [state.me.first_name, state.me.last_name].filter(Boolean).join(' ').trim();
+  el.sessionInfo.innerHTML = `<div><strong>${displayName || state.me.Email}</strong><br/><small>${state.me.Email}</small></div><button id="logout-btn">Logout</button>`;
   document.getElementById('logout-btn').addEventListener('click', async () => {
     try {
       await api('/logout', { method: 'POST' });
@@ -276,7 +326,12 @@ function renderProfile() {
     <h2>Profile</h2>
     <form id="profile-form">
       <label>Email<input disabled value="${state.me.Email}" /></label>
-      <label>Name<input name="Name" value="${state.me.Name || ''}" /></label>
+      <label>First name<input name="first_name" value="${state.me.first_name || ''}" /></label>
+      <label>Last name<input name="last_name" value="${state.me.last_name || ''}" /></label>
+      <label>Address<input name="address" value="${state.me.address || ''}" /></label>
+      <label>City<input name="city" value="${state.me.city || ''}" /></label>
+      <label>State<input name="state" value="${state.me.state || ''}" /></label>
+      <label>ZIP<input name="zip" value="${state.me.zip || ''}" /></label>
       <label>Phone<input name="Phone" value="${state.me.Phone || ''}" /></label>
       <label>Comments<textarea name="Comments">${state.me.Comments || ''}</textarea></label>
       <label>Admin
@@ -295,7 +350,12 @@ function renderProfile() {
     e.preventDefault();
     const fd = new FormData(e.currentTarget);
     const payload = {
-      Name: fd.get('Name'),
+      first_name: fd.get('first_name'),
+      last_name: fd.get('last_name'),
+      address: fd.get('address'),
+      city: fd.get('city'),
+      state: fd.get('state'),
+      zip: fd.get('zip'),
       Phone: fd.get('Phone'),
       Comments: fd.get('Comments'),
     };
@@ -498,7 +558,7 @@ function renderAvailability(container, choice) {
         td.classList.add('user-cell');
       }
 
-      td.title = `Capacity: ${stats.capacity}\nHigher-priority spots: ${oneDecimal(stats.higherPrioritySpots)}\nSame-priority spots: ${oneDecimal(stats.samePrioritySpots)}\nSame-priority groups: ${stats.samePriorityGroups}`;
+      td.title = `Capacity: ${stats.capacity}\nHigher-pri spots req.: ${oneDecimal(stats.higherPrioritySpots)}\nSame-pri spots req.: ${oneDecimal(stats.samePrioritySpots)}\nSame-priority groups: ${stats.samePriorityGroups}`;
       td.textContent = oneDecimal(remAfterSame);
       tr.appendChild(td);
 
@@ -570,7 +630,9 @@ async function loadSummary() {
 }
 
 async function saveRequests() {
-  const payload = { requests: serializeChoices() };
+  const normalizedChoices = normalizeChoicesForSave();
+  state.choices = normalizedChoices;
+  const payload = { requests: serializeChoices(normalizedChoices) };
   await api(`/requestor/${state.me.Requestor_ID}/requests`, { method: 'PUT', body: payload });
   const me = await api('/me');
   state.me = me;
@@ -592,7 +654,23 @@ async function renderRequests() {
     <div id="requests-msg"></div>
     <div class="requests-layout">
       <div class="request-list" id="request-list"></div>
-      <div class="availability-wrap" id="availability-wrap"></div>
+      <div>
+        <div class="availability-legend" aria-label="Availability legend">
+          <div class="legend-item">
+            <span class="legend-swatch legend-current"></span>
+            <span>Current choice</span>
+          </div>
+          <div class="legend-item">
+            <span class="legend-swatch legend-lottery"></span>
+            <span>Other groups also have this as the same choice # -- may be subject to lottery</span>
+          </div>
+          <div class="legend-item">
+            <span class="legend-swatch legend-risk"></span>
+            <span>Groups with more credits or a higher-priority choice have requested this -- may be unavailable</span>
+          </div>
+        </div>
+        <div class="availability-wrap" id="availability-wrap"></div>
+      </div>
     </div>
   `;
 
@@ -692,7 +770,7 @@ async function renderAdmin() {
       ? `<table class="availability"><thead><tr><th>Choice</th><th>% Groups</th><th>% Spots</th></tr></thead><tbody>${rows
           .map((r) => `<tr><td>${r.choice}</td><td>${r.groupsPercent}</td><td>${r.spotsPercent}</td></tr>`)
           .join('')}</tbody></table>`
-      : '<p>No confirmed assignments yet.</p>';
+      : '<p>No granted assignments yet.</p>';
   });
 
 }

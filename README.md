@@ -4,9 +4,20 @@ The Sierra Club hut volunteers earn early reservation privileges through their s
 
 The overall product spec is in `Docs/PRD.md`. Implementation guidance lives in `Docs/technical design requirements.md` and `Docs/AGENTS.md`. This project was originally built by Codex from those specs.
 
+### Request summary test harness
+
+There is a lightweight sanity test for the request-summary credit rules:
+* `node scripts/requestSummaryTest.js`
+* or `npm run test:summary`
+
+### Assignment harness
+
+To exercise the assignment algorithm on a small synthetic dataset:
+* `node scripts/assignmentHarness.js`
+
 ### Authenticating users
 
-Your email has already been recorded in the system by the work party leaders.  When you enter your email we will send a temporary code to that email if it is in the system. 
+Your email has already been recorded in the system by the work party leaders.  When you enter your email we will send a temporary code to that email if it is in the system.  Your browser will remember you for 7 days after a successful login.
 
 ### Profile tab
 
@@ -20,6 +31,8 @@ Add your requests in priority order.  As you go, check the right side availabili
 
 
 In the availability view:
+The grid covers December 15 of the current year through April 30 of the following year (inclusive).
+There is a legend above the grid that explains the current choice border and the yellow/red shading.
 * The heavy border indicates your selected dates and huts.
 * The yellow cells are vulnerable in a lottery because other group(s) have pending requests of the same priority.  You may want to find other dates or choose more huts or reduce your group size.
 * The pink cells are not available because of higher-priority requests.    Find other dates or choose more huts or reduce your group size.  Or, you can hope the other requestor(s) change their requests before the cut-off date.
@@ -27,7 +40,7 @@ In the availability view:
 ### For administrators
 
 The app sends emails as one of the administrators and does not have its own email system.  Set up your account so the app can send emails as you.
-* adjust /data/requestors.tsv locally.  this has real email addresses, as long as the repository is public we do not want them displayed.
+* you may need to adjust /data/requestors.tsv locally.  this has real email addresses, so if the repository is public we do not want them displayed.
 * adjust /etc/msmtprc to use the account name and password.  For Yahoo, this requires getting an app password which is distinct from the password you use to log in to yahoo mail.  See https://github.com/wisterw/Sierra-Club-Huts/blob/main/Docs/setting%20up%20yahoo%20mail%20for%20email%20relay.png for where to find this in Yahoo Mail.  
 * set the mail relay environment variables before starting the app:
   * `MSMTP_PATH` (default: `/usr/bin/msmtp`)

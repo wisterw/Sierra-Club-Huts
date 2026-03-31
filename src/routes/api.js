@@ -183,7 +183,12 @@ router.put('/requestor/:id', requireAuth, (req, res) => {
   }
 
   const updates = {
-    Name: req.body.Name,
+    first_name: req.body.first_name,
+    last_name: req.body.last_name,
+    address: req.body.address,
+    city: req.body.city,
+    state: req.body.state,
+    zip: req.body.zip,
     Phone: req.body.Phone,
     Comments: req.body.Comments,
   };
@@ -225,7 +230,8 @@ router.put('/requestor/:id/requests', requireAuth, (req, res) => {
 router.get('/request-summary', requireAuth, (req, res) => {
   const choiceNumber = Number(req.query.choiceNumber || 1);
   const excludeRequestorId = req.query.excludeRequestorId ? Number(req.query.excludeRequestorId) : null;
-  const summary = summarizeByChoice(store.listRequests(), choiceNumber, excludeRequestorId);
+  const requestorsById = new Map(store.listRequestors().map((r) => [r.Requestor_ID, r]));
+  const summary = summarizeByChoice(store.listRequests(), choiceNumber, excludeRequestorId, requestorsById);
   return res.json({ rows: summary });
 });
 
@@ -242,6 +248,16 @@ router.post('/admin/upload-requestors', requireAuth, requireAdmin, upload.single
 
   const headers = lines[0].split('\t');
   const idx = (h) => headers.findIndex((x) => x === h);
+  const cell = (cells, header) => {
+    const i = idx(header);
+    return i >= 0 ? cells[i] : '';
+  };
+  const splitName = (name) => {
+    const cleaned = String(name || '').trim();
+    if (!cleaned) return { first: '', last: '' };
+    const parts = cleaned.split(/\s+/, 2);
+    return { first: parts[0] || '', last: parts[1] || '' };
+  };
   const iEmail = idx('Email');
   if (iEmail < 0) {
     return res.status(400).json({ error: 'TSV must include Email header.' });
@@ -252,17 +268,23 @@ router.post('/admin/upload-requestors', requireAuth, requireAdmin, upload.single
     const cells = line.split('\t');
     const email = cells[iEmail];
     if (!email) continue;
+    const fallbackName = splitName(cell(cells, 'Name'));
 
     store.upsertRequestor({
       Email: email,
-      Name: cells[idx('Name')] || '',
-      Phone: cells[idx('Phone')] || '',
-      Comments: cells[idx('Comments')] || '',
-      Credits: Number(cells[idx('Credits')] || 0),
-      Admin: toBoolean(cells[idx('Admin')]),
-      login_code: cells[idx('login_code')] || '',
-      code_generated_when: cells[idx('code_generated_when')] || cells[idx('Email_code_sent')] || '',
-      last_failed_login: cells[idx('last_failed_login')] || '',
+      first_name: cell(cells, 'first_name') || fallbackName.first,
+      last_name: cell(cells, 'last_name') || fallbackName.last,
+      address: cell(cells, 'address'),
+      city: cell(cells, 'city'),
+      state: cell(cells, 'state'),
+      zip: cell(cells, 'zip'),
+      Phone: cell(cells, 'Phone'),
+      Comments: cell(cells, 'Comments'),
+      Credits: Number(cell(cells, 'Credits') || 0),
+      Admin: toBoolean(cell(cells, 'Admin')),
+      login_code: cell(cells, 'login_code'),
+      code_generated_when: cell(cells, 'code_generated_when') || cell(cells, 'Email_code_sent'),
+      last_failed_login: cell(cells, 'last_failed_login'),
     });
     createdOrUpdated += 1;
   }
@@ -278,20 +300,20 @@ router.get('/admin/download/requestors', requireAuth, requireAdmin, (req, res) =
   const rows = requestors.filter((r) => {
     const mine = requests.filter((x) => x.Requestor_ID === r.Requestor_ID);
     if (filter === 'no-pending-requests') {
-      return mine.every((x) => x.Status !== 'pending');
+      return mine.every((x) => !['pending', 'requested'].includes(x.Status));
     }
     if (filter === 'no-likely-requests') {
-      return mine.every((x) => x.Status !== 'pending' && x.Status !== 'confirmed');
+      return mine.every((x) => !['pending', 'requested', 'confirmed', 'granted'].includes(x.Status));
     }
     if (filter === 'no-assigned-requests') {
-      return mine.every((x) => x.Status !== 'confirmed');
+      return mine.every((x) => !['confirmed', 'granted'].includes(x.Status));
     }
     return true;
   });
 
   const withRequests = rows.map((r) => ({
     ...r,
-    Requests_Assigned: requests.some((x) => x.Requestor_ID === r.Requestor_ID && x.Status === 'confirmed') ? 'TRUE' : 'FALSE',
+    Requests_Assigned: requests.some((x) => x.Requestor_ID === r.Requestor_ID && ['confirmed', 'granted'].includes(x.Status)) ? 'TRUE' : 'FALSE',
   }));
 
   const headers = [...REQUESTORS_HEADERS, 'Requests_Assigned'];
@@ -304,7 +326,7 @@ router.get('/admin/download/requests-joined', requireAuth, requireAdmin, (req, r
   const requestorsById = new Map(store.listRequestors().map((r) => [r.Requestor_ID, r]));
   const joined = requestsJoinedReport(store.listRequests(), requestorsById);
   const headers = [
-    'Requestor_ID', 'Email', 'Name', 'Credits', 'Choice_Number', 'Week_Key', 'Nights', 'Spots_ideal',
+    'Requestor_ID', 'Email', 'first_name', 'last_name', 'Credits', 'Choice_Number', 'Week_Key', 'Nights', 'Spots_ideal',
     'Huts_Marked', 'Benson', 'Bradley', 'Grubb', 'Ludlow', 'Arrival', 'Departure', 'Status', 'Hut_granted',
   ];
 

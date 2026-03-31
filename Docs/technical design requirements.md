@@ -3,9 +3,14 @@
 We will use tab-delimited, row/column style files suitable for a relational approach, not hierarchical JSON files, for our persistence store.  Instantiate at startup and update / write changes back to disk periodically so that we can stay up to date in case we need to restart the application.  The cardinality of these objects is under a few thousand rows, so we don’t need a full database approach for now.  The first row should be the header row. 
 
 * Requestors  
-  * Requestor\_ID (integer).  primary key.  Auto-generated random number.  Unique.  May be used as a tiebreaking lottery number as well.  
+  * Requestor\_ID (integer).  primary key.  Auto-generated random number.  Unique.  
   * Email (string).  Required.  
-  * Name (string). May be null.  For email communications.  
+  * first_name (string). May be null.
+  * last_name (string).  May be null.
+  * address (string)
+  * city (string)
+  * state (string).  US state.
+  * zip (string).  ZIP code.
   * Phone (string).  Backup communication method.   May be null.  
   * Comments (string).  May be null.  
   * Credits (integer).  Required.  Users with more credits are higher priority and will get to choose first.  
@@ -15,6 +20,7 @@ We will use tab-delimited, row/column style files suitable for a relational appr
   * Creation\_date. (datetime).  When was the user record created.  
   * Last\_mod\_date. (datetime).  When was this user record last edited.
   * last\_failed\_login (datetime).  When was the last bad login code entered (for limiting brute force attacks)
+  * years of service.  How many of the prior 3 years the requestor has volunteered.
 
 * Requests.  The primary key consists of four columns: Requestor\_ID, Hut, arrival date, and departure date.  
   * Requestor\_ID (Integer).  
@@ -29,16 +35,29 @@ We will use tab-delimited, row/column style files suitable for a relational appr
   * Spots\_min.  The fewest \# of spots the requestor would accept without going to their next choice.  
   * Hut\_granted.  Which hut was selected of the options.  
   * Spots\_granted.  Spots that were available for confirmed requests.  
-  * Status. (string).  Pending, lost-lottery, confirmed, not-used  
-  * Confirmed\_How (string).  won-lottery, default  
+  * Status. (string).  requested, granted, lost-lottery, not-needed.  Default is "requested".  (Legacy values pending/confirmed should be treated as requested/granted.)
+  * Lottery_value.  random # generated for the assignment lottery.  
   * Creation\_date. (datetime).  When was the request created.  
   * Last\_mod\_date. (datetime).  When was this request last edited.
+  * hut_count_flexibility (integer).  How many huts the request is open to.  This is a calculated field, based on the # of huts marked TRUE.
+  * saturday_week_number (integer).  Using the saturday closest to the midpoint of the trip, which saturday does the trip cover.  This is calculated from the (departure date - arrival date) / 2 to get the midpoint, then find the closest saturday to that midpoint and calculate the week number for that saturday.
+  * Request list verification when saving:
+    * Verify departure is after arrival.
+    * For combination trips, verify traverse date is after arrival and before departure.
+    * Verify minimum spots requested is less than or equal to ideal spots requested.
+    * Verify choice numbers are 1 or greater; close gaps to keep them sequential.
+    * Verify trip length is 5 days or fewer.
+    * Verify arrival/departure are between Dec 15 (current year) and Apr 30 (next year).
 
 ## Constants and settings
 The standard error message for authentication errors is "Login failure, please try again later or contact the hut administrator."
 For sending email, use msmtp as a mail relay via nodemailer. Use the account named mail_relay_credentials in /etc/msmtprc The binary for msmtp is at /usr/bin/msmtp 
 
 ## Backend
+
+### At Startup
+
+At startup, open the requestors and requests files to make sure they are not locked.  If the files are locked, do not exist, or exist but do not have a valid header row, throw an error to the console and exit.
 
 ### Endpoints available externally
 
@@ -62,4 +81,7 @@ Except for checkLogin, all of the backend endpoints require a valid session cook
 
 **Requestor.**  Endpoint to get and mutate details about a specific requestor\_id, including their requests.  Returns, and accepts, requestor details.  Admins can do this for all requestors.
 
-**requestSummary.**  Endpoint to get a read-only summary of all requests.  Accepts a choice number (first choice, second choice, etc).  Returns a count of groups and spots requested by date and hut.
+**requestSummary.**  Endpoint to get a read-only summary of all requests.  Accepts a choice number (first choice, second choice, etc) and the requestor id for the currently selected request.  Returns per date and hut:
+* higher-priority spots requested = ideal spots requested by higher-priority choices for requestors with the same credits as the selected requestor, plus ideal spots requested by first-choice requests from requestors with higher credits.  Split spots across all huts marked on a request.
+* same-priority spots requested = minimum spots requested for the same choice number from requestors with the same credits as the selected requestor.  Split spots across all huts marked on a request.
+* same-priority groups requesting = number of distinct requestors for the same choice number and credits for that hut and date.
