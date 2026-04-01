@@ -73,6 +73,8 @@ async function sendLoginCodeEmail(email, code) {
     path: msmtpPath,
     // Use msmtp's native options for account + config file.
     args: ['-i', '-a', msmtpAccount, '-C', msmtpConfig],
+    logger: true,
+    debug: true,
   });
 
   const message = {
@@ -84,7 +86,14 @@ async function sendLoginCodeEmail(email, code) {
     message.from = from;
   }
 
-  await transport.sendMail(message);
+  const info = await transport.sendMail(message);
+  console.info('sendEmail: msmtp response:', {
+    accepted: info.accepted,
+    rejected: info.rejected,
+    response: info.response,
+    envelope: info.envelope,
+    messageId: info.messageId,
+  });
 }
 
 function assertNormalizedEmailLength(email) {

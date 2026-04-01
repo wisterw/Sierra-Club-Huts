@@ -48,6 +48,23 @@ body {
   box-shadow: 0 10px 24px #1a251b1a;
 }
 
+.login-panel form {
+  max-width: 420px;
+}
+
+.login-panel #login-email {
+  max-width: 26ch;
+}
+
+.login-panel #login-code {
+  max-width: 8ch;
+}
+
+.login-panel button {
+  padding: 0.4rem 0.7rem;
+  width: fit-content;
+}
+
 .tabs {
   display: flex;
   gap: 0.5rem;
