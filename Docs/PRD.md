@@ -104,7 +104,6 @@ The availability view is a grid of 6 or 7 columns including some header columns,
 * Month and year
 * Day of week and day of month
 * One column for each hut: Benson, Bradley, Grubb, and Ludlow.
-* A total column for that day
 
 There is a row for each day from December 15th of the current year through April 30th of the following year (inclusive).  Saturday and Sunday are in bold.  Show the month only for the first day of the month or the first visible row of the scroll area; for other days of the month, the month column can be left blank.
 
