@@ -35,7 +35,7 @@ Requestors use a web browser to access the application.
 
 Instead of a password system, we will send a code to the email of record.  The code will be valid for approximately 10 minutes.  The login page should show the following controls:
 * email.  Text field for user to enter their email.
-* "send login code to email" button.  This button should call the sendEmail endpoint.
+* "send login code to email" button.  This button should call the sendEmail endpoint.  Show a message here that "If we have the email on file, a code has been sent.  Please note that it can take up to 1 minute for the email to come through"
 * code.  Numeric field for user to enter the 4-digit code they received in their email.
 * "Login" button.  This button should call the checkLogin endpoint.
 

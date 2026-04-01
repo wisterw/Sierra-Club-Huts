@@ -812,7 +812,7 @@ function wireLogin() {
         method: 'POST',
         body: { email: el.loginEmail.value },
       });
-      el.loginError.textContent = 'If the email exists, a login code has been sent.';
+      el.loginError.textContent = 'If we have the email on file, a code has been sent. Please note that it can take up to 1 minute for the email to come through.';
     } catch (err) {
       el.loginError.textContent = err.message;
     }
