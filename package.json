@@ -9,9 +9,19 @@
     "test:summary": "node scripts/requestSummaryTest.js"
   },
   "dependencies": {
-    "express": "^4.19.2",
+    "express": "^4.22.1",
     "express-session": "^1.18.0",
     "multer": "^1.4.5-lts.1",
     "nodemailer": "^6.10.1"
-  }
+  },
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/wisterw/Sierra-Club-Huts.git"
+  },
+  "author": "Wister Walcott",
+  "license": "GPL-3.0",
+  "bugs": {
+    "url": "https://github.com/wisterw/Sierra-Club-Huts/issues"
+  },
+  "homepage": "https://github.com/wisterw/Sierra-Club-Huts#readme"
 }
