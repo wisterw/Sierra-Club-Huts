@@ -1,21 +1,8 @@
 The Sierra Club hut volunteers earn early reservation privileges through their service each fall.  This is a web-based application for the volunteers to enter their reservation requests.  The application shows the total spots requested so far for each hut-date combination, allowing requestors to adjust their requests and reduce overlap with other requestors.  It also saves time for the hut coordinator.
 
-### Project specs and build notes
+## For Users
 
-The overall product spec is in `Docs/PRD.md`. Implementation guidance lives in `Docs/technical design requirements.md` and `Docs/AGENTS.md`. This project was originally built by Codex from those specs.
-
-### Request summary test harness
-
-There is a lightweight sanity test for the request-summary credit rules:
-* `node scripts/requestSummaryTest.js`
-* or `npm run test:summary`
-
-### Assignment harness
-
-To exercise the assignment algorithm on a small synthetic dataset:
-* `node scripts/assignmentHarness.js`
-
-### Authenticating users
+### Logging in
 
 Your email has already been recorded in the system by the work party leaders.  When you enter your email we will send a temporary code to that email if it is in the system.  Your browser will remember you for 7 days after a successful login.
 
@@ -29,15 +16,15 @@ The request tab is split into two panels.  The left panel shows the user’s “
 
 Add your requests in priority order.  As you go, check the right side availability preview to reduce the risk of overlap.  Check as many huts as you are able to, and be flexible with your group size, since that will improve your chances.   You can also enter different huts as different choices (e.g. second choice) if you favor one hut over another.
 
-
 In the availability view:
-The grid covers December 15 of the current year through April 30 of the following year (inclusive).
-There is a legend above the grid that explains the current choice border and the yellow/red shading.
+The grid covers December 15 of the current year through April 30 of the following year (inclusive).  There is a legend above the grid that explains the current choice border and the yellow/red shading.
 * The heavy border indicates your selected dates and huts.
 * The yellow cells are vulnerable in a lottery because other group(s) have pending requests of the same priority.  You may want to find other dates or choose more huts or reduce your group size.
 * The pink cells are not available because of higher-priority requests.    Find other dates or choose more huts or reduce your group size.  Or, you can hope the other requestor(s) change their requests before the cut-off date.
 
-### For administrators
+## For administrators
+
+### Email setup using MSMTP
 
 The app sends emails as one of the administrators and does not have its own email system.  Set up your account so the app can send emails as you.
 * you may need to adjust /data/requestors.tsv locally.  this has real email addresses, so if the repository is public we do not want them displayed.
@@ -49,7 +36,7 @@ The app sends emails as one of the administrators and does not have its own emai
   * `LOGIN_EMAIL_FROM` (optional but recommended if your relay enforces sender address)
 * add yourself to data/requestors.tsv as an admin user.  You must be in the requestors file to receive a login code.
 
-### Deploying to AWS EC2 (quick guide)
+### Deploying to AWS EC2
 
 These steps assume an Ubuntu instance, but the same ideas apply to other distros.
 
@@ -95,3 +82,20 @@ WantedBy=multi-user.target
 
 **Reverse proxy note**
 If you want HTTPS, terminate TLS with an AWS load balancer or Nginx and forward to `http://127.0.0.1:3000`. When you do this, set `TRUST_PROXY=1` and `SESSION_SECURE=true` so cookies are marked secure only over HTTPS.
+
+## For Developers
+
+### Project specs and build notes
+
+The overall product spec is in `Docs/PRD.md`. Implementation guidance lives in `Docs/technical design requirements.md` and `Docs/AGENTS.md`. This project was originally built by Codex from those specs.
+
+### Request summary test harness
+
+There is a lightweight sanity test for the request-summary credit rules:
+* `node scripts/requestSummaryTest.js`
+* or `npm run test:summary`
+
+### Assignment harness
+
+To exercise the assignment algorithm on a small synthetic dataset:
+* `node scripts/assignmentHarness.js`
