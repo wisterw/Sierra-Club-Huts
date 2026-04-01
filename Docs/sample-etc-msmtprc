@@ -1,0 +1,8 @@
+account mail_relay_credentials
+tls on
+tls_starttls off
+auth on
+host smtp.mail.yahoo.com (or google or whatever)
+user your-email-username-here
+from your-email-address-here
+password your-api-password-here
