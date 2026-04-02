@@ -204,21 +204,21 @@ Sort the results by:
 #### Efficiency report
 Calculate the % of requesting groups (and spots) who got their first choice, second choice, etc.
 
-### Assignment Algorithm
+## Assignment Algorithm
 
 The goal of the assignment algorithm is to match requests to huts to maximize the number of requestors receiving a choice as close as possible to their first choice, while respecting the priorities of the different requestors.  The algorithm operates as follows:  
-#### Setup
+### Setup
 1. Set all requests to "requested" to reset from prior runs.
 2. Set all request spots_granted to spots_ideal.  These may be decremented in the case of contention between groups as the algorithm proceeds.
 3. hut_count_flexibility should be set already but can re-calculate this for all rows in case there have been edits to the requests file from some other source.
 4. saturday_week_number should be set already but can re-calculate this for all rows in case there have been edits to the requests file from some other source.
-#### Build Lottery Groups
+### Build Lottery Groups
 Group requests.  Skip requests with status "not-needed". Process in order:
 * requestors with the highest credit first.
 * within requestors with the same credit level, requests with the lowest choice number first.
 * within requests with the same credit level and choice number, group by the same saturday_week_number.
 * For each combination of credit level, choice number, and week, group by hut_count_flexibility (4,3,2,1), working with the highest hut_count_flexibility first.
-#### Run Lotteries
+### Run Lotteries
 * For all the requests of the same credit level, choice number, saturday_week_number, and hut_count_flexibility, assign a random lottery # to Lottery_value.
 * Skip over requests with status "not-needed" -- these requestors already have received their request.
 * Working through the requests in order of their Lottery_value:
@@ -239,7 +239,7 @@ Group requests.  Skip requests with status "not-needed". Process in order:
           * Set status to granted.
           * Set the lower-choice requests for this requestor to "not-needed".
 
-### Hut and trip capacities
+## Appendix: Hut and trip capacities
 
 Benson=12
 Bradley=15
