@@ -31,6 +31,10 @@ Write a multi-user web-based application for a community of requestors to self-m
 
 Requestors use a web browser to access the application. 
 
+### Application title
+The title of the application is "Sierra Club Ski Huts".
+The subtitle of the application is "Volunteer pre-reservation request system".
+
 ### Authenticating users (login page)
 
 Instead of a password system, we will send a code to the email of record.  The code will be valid for approximately 10 minutes.  The login page should show the following controls:
@@ -41,27 +45,9 @@ Instead of a password system, we will send a code to the email of record.  The c
 
 When a user returns to the application within 7 days of a successful login using that same browser, the application should remember them.  If after 7 days, they can ask for a new code to be emailed.
 
-### Profile tab
-
-The Profile tab shows the following fields:
-
-* Email (not mutable)  
-* First name (mutable)  
-* Last name (mutable)  
-* Address (mutable)  
-* City (mutable)  
-* State (mutable)  
-* ZIP (mutable)  
-* Phone (mutable)  
-* Comments (mutable)  
-* Is\_an\_admin flag (mutable by admin users only)  
-* credits (mutable by admin users only)
-
-There is a save button for persisting edits to the mutable fields.  The profile tab works with the requestor endpoint.
-
 ### Requests tab
 
-The request tab is split into two panels.  The left panel shows the user’s “choices list” (first choice, second choice, etc.).  The right panel is a detailed “availability view” of the schedule linked to the selected choice and showing availability from a few days before until a few days after the selected date range.
+The requests tab is the default tab.  The requests tab is split into two panels.  The left panel shows the user’s “choices list” (first choice, second choice, etc.).  The right panel is a detailed “availability view” of the schedule linked to the selected choice and showing availability from a few days before until a few days after the selected date range.
 
 #### Request list
 
@@ -137,27 +123,86 @@ There is a legend above the availability grid with three small example squares a
 
 The scroll for the availability grid should be set to a few days before the arrival date in the request.  If the arrival date in the request is blank, the availability grid should be scrolled to the top.
 
+### Profile tab
+
+The Profile tab is the second tab.  The Profile tab shows the following fields:
+
+* Email (not mutable)  
+* First name (mutable)  
+* Last name (mutable)  
+* Address (mutable)  
+* City (mutable)  
+* State (mutable)  
+* ZIP (mutable)  
+* Phone (mutable)  
+* Comments (mutable)  
+* Is\_an\_admin flag (mutable by admin users only)  
+* credits (mutable by admin users only)
+
+There is a save button for persisting edits to the mutable fields.  The profile tab works with the requestor endpoint.
+
 ### Admin tab
 
 The admin tab is only available to users for whom the admin flag is set to TRUE.  The admin tab allows an upload of a tab-delimited file with a header row to upload the users table and a menu for other actions.
 
 The admin tab has a clickable list of available actions.  Actions include:
 
-* Upload list of requestors from a tab-delimited file.  This will create new records where a requestor’s email does not exist already, and update records where the email is already present.  
-* Download lists of requestors, with requests if assigned or blank if not.  Available filters / sublinks:  
-  1. All requestors  
-  2. No pending requests  
-  3. No likely requests  
-  4. No assigned requests  
-* Download list of requests joined with users.  sort by:   
-  1. Priority choice ascending  
-  2. Week \# of closest saturday from the midpoint of the request (in other words, group the requests by week)  
-  3. Credits for requestor, descending  
-  4. \# of days in the reservation, descending (longest reservations first)  
-  5. \# of people in the reservation, descending (largest groups first)  
-  6. \# of huts marked, ascending (fewest \# of huts first)  
-* Run assignment algorithm, as described below in this document.
-* Efficiency report.  The % of requesting groups (and spots) who got their first choice, second choice, etc.
+#### Upload list of requestors 
+Upload a tab-delimited file.  This will create new records where a requestor’s email does not exist already, and update records where the email is already present.  
+
+#### Download requests
+This action provides an administrator a look at the full data set, with requests and requestors joined together.  Include the following fields:
+ * From requestors:
+   * Requestor\_ID  
+   * Email
+   * first_name
+   * last_name
+   * address
+   * city
+   * state
+   * zip
+   * Phone
+   * Comments 
+   * Credits
+   * code_generated_when 
+   * Admin (boolean)
+   * Creation\_date 
+   * Last\_mod\_date
+   * last\_failed\_login
+   * years_of_service
+ * From requests:
+   * Benson
+   * Bradley
+   * Grubb
+   * Ludlow
+   * Arrival 
+   * Departure 
+   * Choice\_Number
+   * Spots\_ideal
+   * Spots\_min
+   * Hut\_granted
+   * Spots\_granted
+   * Status
+   * Lottery_value 
+   * Creation\_date  
+   * Last\_mod\_date
+   * hut_count_flexibility
+   * saturday_week_number
+
+Run the join as an outer join, where a row is included for each requestor even if they have no requests.
+
+Sort the results by:   
+  1. Saturday_week_number
+  2. Requestor credits descending
+  3. Choice_number ascending  
+  4. hut_count_flexibility
+  5. Lottery_value
+  
+#### Run assignment algorithm
+(as described below in this document)
+
+#### Efficiency report
+Calculate the % of requesting groups (and spots) who got their first choice, second choice, etc.
 
 ### Assignment Algorithm
 

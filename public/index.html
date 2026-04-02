@@ -3,15 +3,15 @@
   <head>
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-    <title>Sierra Club Huts</title>
+    <title>Sierra Club Ski Huts</title>
     <link rel="stylesheet" href="/css/styles.css" />
   </head>
   <body>
     <div class="app-shell">
       <header class="app-header">
         <div>
-          <h1>Sierra Club Huts</h1>
-          <p>Transparent reservation requests and lottery assignment</p>
+          <h1>Sierra Club Ski Huts</h1>
+          <p>Volunteer pre-reservation request system</p>
         </div>
         <div id="session-info"></div>
       </header>
@@ -34,13 +34,13 @@
 
       <main id="main-app" class="hidden">
         <nav class="tabs">
-          <button data-tab="profile" class="active">Profile</button>
-          <button data-tab="requests">Requests</button>
+          <button data-tab="requests" class="active">Requests</button>
+          <button data-tab="profile">Profile</button>
           <button data-tab="admin" id="admin-tab-btn" class="hidden">Admin</button>
         </nav>
 
-        <section id="tab-profile" class="tab-content panel"></section>
-        <section id="tab-requests" class="tab-content panel hidden"></section>
+        <section id="tab-requests" class="tab-content panel"></section>
+        <section id="tab-profile" class="tab-content panel hidden"></section>
         <section id="tab-admin" class="tab-content panel hidden"></section>
       </main>
     </div>

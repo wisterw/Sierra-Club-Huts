@@ -204,6 +204,9 @@ function runAssignment(requests, requestorsById) {
     req.Hut_granted = '';
     req.Spots_granted = Number(req.Spots_ideal || 0);
     req.Confirmed_How = '';
+    req.Lottery_value = Number(req.Lottery_value || 0);
+    req.hut_count_flexibility = hutsForRequest(req).length;
+    req.saturday_week_number = closestSaturdayWeekKey(req.Arrival, req.Departure);
     req.Last_mod_date = now;
   }
 
@@ -239,9 +242,11 @@ function runAssignment(requests, requestorsById) {
 
   for (const group of orderedGroups) {
     const shuffled = group.requests
-      .map((req) => ({ req, lottery: Math.random() }))
-      .sort((a, b) => a.lottery - b.lottery)
-      .map((entry) => entry.req);
+      .map((req) => {
+        req.Lottery_value = Math.random();
+        return req;
+      })
+      .sort((a, b) => a.Lottery_value - b.Lottery_value);
 
     for (const req of shuffled) {
       if (req.Status === 'not-needed') continue;
@@ -281,30 +286,106 @@ function efficiencyReport(requests) {
 }
 
 function requestsJoinedReport(requests, requestorsById) {
-  const out = requests.map((req) => {
-    const requestor = requestorsById.get(Number(req.Requestor_ID));
-    const hutsCount = HUTS.filter((h) => req[h]).length;
-    const nights = dateRangeNights(req.Arrival, req.Departure).length;
-    return {
-      ...req,
-      Email: requestor?.Email || '',
-      first_name: requestor?.first_name || '',
-      last_name: requestor?.last_name || '',
-      Credits: Number(requestor?.Credits || 0),
-      Week_Key: closestSaturdayWeekKey(req.Arrival, req.Departure),
-      Nights: nights,
-      Huts_Marked: hutsCount,
-    };
-  });
+  const byRequestor = new Map();
+  for (const req of requests) {
+    const id = Number(req.Requestor_ID);
+    if (!byRequestor.has(id)) byRequestor.set(id, []);
+    byRequestor.get(id).push(req);
+  }
+
+  const out = [];
+  for (const requestor of requestorsById.values()) {
+    const reqs = byRequestor.get(Number(requestor.Requestor_ID)) || [];
+    if (!reqs.length) {
+      out.push({
+        Requestor_ID: requestor.Requestor_ID,
+        Email: requestor.Email || '',
+        first_name: requestor.first_name || '',
+        last_name: requestor.last_name || '',
+        address: requestor.address || '',
+        city: requestor.city || '',
+        state: requestor.state || '',
+        zip: requestor.zip || '',
+        Phone: requestor.Phone || '',
+        Comments: requestor.Comments || '',
+        Credits: Number(requestor.Credits || 0),
+        code_generated_when: requestor.code_generated_when || '',
+        Admin: requestor.Admin ? 'TRUE' : 'FALSE',
+        Creation_date: requestor.Creation_date || '',
+        Last_mod_date: requestor.Last_mod_date || '',
+        last_failed_login: requestor.last_failed_login || '',
+        years_of_service: Number(requestor.years_of_service || 0),
+        Benson: '',
+        Bradley: '',
+        Grubb: '',
+        Ludlow: '',
+        Arrival: '',
+        Departure: '',
+        Choice_Number: '',
+        Spots_ideal: '',
+        Spots_min: '',
+        Hut_granted: '',
+        Spots_granted: '',
+        Status: '',
+        Lottery_value: '',
+        Request_Creation_date: '',
+        Request_Last_mod_date: '',
+        hut_count_flexibility: '',
+        saturday_week_number: '',
+      });
+      continue;
+    }
+
+    for (const req of reqs) {
+      const hutsCount = HUTS.filter((h) => req[h]).length;
+      out.push({
+        Requestor_ID: requestor.Requestor_ID,
+        Email: requestor.Email || '',
+        first_name: requestor.first_name || '',
+        last_name: requestor.last_name || '',
+        address: requestor.address || '',
+        city: requestor.city || '',
+        state: requestor.state || '',
+        zip: requestor.zip || '',
+        Phone: requestor.Phone || '',
+        Comments: requestor.Comments || '',
+        Credits: Number(requestor.Credits || 0),
+        code_generated_when: requestor.code_generated_when || '',
+        Admin: requestor.Admin ? 'TRUE' : 'FALSE',
+        Creation_date: requestor.Creation_date || '',
+        Last_mod_date: requestor.Last_mod_date || '',
+        last_failed_login: requestor.last_failed_login || '',
+        years_of_service: Number(requestor.years_of_service || 0),
+        Benson: req.Benson ? 'TRUE' : 'FALSE',
+        Bradley: req.Bradley ? 'TRUE' : 'FALSE',
+        Grubb: req.Grubb ? 'TRUE' : 'FALSE',
+        Ludlow: req.Ludlow ? 'TRUE' : 'FALSE',
+        Arrival: req.Arrival || '',
+        Departure: req.Departure || '',
+        Choice_Number: Number(req.Choice_Number || 0),
+        Spots_ideal: Number(req.Spots_ideal || 0),
+        Spots_min: Number(req.Spots_min || 0),
+        Hut_granted: req.Hut_granted || '',
+        Spots_granted: Number(req.Spots_granted || 0),
+        Status: req.Status || '',
+        Lottery_value: Number(req.Lottery_value || 0),
+        Request_Creation_date: req.Creation_date || '',
+        Request_Last_mod_date: req.Last_mod_date || '',
+        hut_count_flexibility: Number(req.hut_count_flexibility || hutsCount || 0),
+        saturday_week_number: req.saturday_week_number || closestSaturdayWeekKey(req.Arrival, req.Departure),
+      });
+    }
+  }
 
   out.sort((a, b) => {
-    if (a.Choice_Number !== b.Choice_Number) return a.Choice_Number - b.Choice_Number;
-    if (a.Week_Key !== b.Week_Key) return a.Week_Key.localeCompare(b.Week_Key);
-    if (a.Credits !== b.Credits) return b.Credits - a.Credits;
-    if (a.Nights !== b.Nights) return b.Nights - a.Nights;
-    if (a.Spots_ideal !== b.Spots_ideal) return b.Spots_ideal - a.Spots_ideal;
-    if (a.Huts_Marked !== b.Huts_Marked) return a.Huts_Marked - b.Huts_Marked;
-    return a.Requestor_ID - b.Requestor_ID;
+    const weekA = String(a.saturday_week_number || '').padStart(4, '0');
+    const weekB = String(b.saturday_week_number || '').padStart(4, '0');
+    if (weekA !== weekB) return weekA.localeCompare(weekB);
+    if (Number(a.Credits || 0) !== Number(b.Credits || 0)) return Number(b.Credits || 0) - Number(a.Credits || 0);
+    if (Number(a.Choice_Number || 0) !== Number(b.Choice_Number || 0)) return Number(a.Choice_Number || 0) - Number(b.Choice_Number || 0);
+    if (Number(a.hut_count_flexibility || 0) !== Number(b.hut_count_flexibility || 0)) return Number(a.hut_count_flexibility || 0) - Number(b.hut_count_flexibility || 0);
+    if (Number(a.Lottery_value || 0) !== Number(b.Lottery_value || 0)) return Number(a.Lottery_value || 0) - Number(b.Lottery_value || 0);
+    return Number(a.Requestor_ID || 0) - Number(b.Requestor_ID || 0);
   });
 
   return out;

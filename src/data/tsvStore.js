@@ -1,6 +1,7 @@
 const fs = require('fs');
 const path = require('path');
 const { DATA_DIR, REQUESTORS_FILE, REQUESTS_FILE, HUTS } = require('../config');
+const { closestSaturdayWeekKey } = require('../services/dates');
 const { normalizeEmail } = require('../services/auth');
 
 const REQUESTORS_HEADERS = [
@@ -21,6 +22,7 @@ const REQUESTORS_HEADERS = [
   'Creation_date',
   'Last_mod_date',
   'last_failed_login',
+  'years_of_service',
 ];
 
 const REQUESTS_HEADERS = [
@@ -34,9 +36,12 @@ const REQUESTS_HEADERS = [
   'Hut_granted',
   'Spots_granted',
   'Status',
+  'Lottery_value',
   'Confirmed_How',
   'Creation_date',
   'Last_mod_date',
+  'hut_count_flexibility',
+  'saturday_week_number',
 ];
 
 function parseTsv(content) {
@@ -146,6 +151,7 @@ class TsvStore {
       Creation_date: r.Creation_date || '',
       Last_mod_date: r.Last_mod_date || '',
       last_failed_login: r.last_failed_login || '',
+      years_of_service: Number(r.years_of_service || r['years of service'] || 0),
     }));
 
     this.requests = reqsParsed.rows.map((r) => ({
@@ -162,9 +168,12 @@ class TsvStore {
       Hut_granted: r.Hut_granted || '',
       Spots_granted: Number(r.Spots_granted || 0),
       Status: r.Status || 'requested',
+      Lottery_value: Number(r.Lottery_value || 0),
       Confirmed_How: r.Confirmed_How || '',
       Creation_date: r.Creation_date || '',
       Last_mod_date: r.Last_mod_date || '',
+      hut_count_flexibility: Number(r.hut_count_flexibility || 0),
+      saturday_week_number: r.saturday_week_number || '',
     }));
   }
 
@@ -180,6 +189,7 @@ class TsvStore {
     const requestorsRows = this.requestors.map((r) => ({
       ...r,
       Admin: r.Admin ? 'TRUE' : 'FALSE',
+      years_of_service: Number(r.years_of_service || 0),
     }));
 
     const requestsRows = this.requests.map((r) => ({
@@ -188,6 +198,9 @@ class TsvStore {
       Bradley: r.Bradley ? 'TRUE' : 'FALSE',
       Grubb: r.Grubb ? 'TRUE' : 'FALSE',
       Ludlow: r.Ludlow ? 'TRUE' : 'FALSE',
+      Lottery_value: Number(r.Lottery_value || 0),
+      hut_count_flexibility: Number(r.hut_count_flexibility || 0),
+      saturday_week_number: r.saturday_week_number || '',
     }));
 
     fs.writeFileSync(REQUESTORS_FILE, toTsv(REQUESTORS_HEADERS, requestorsRows), 'utf8');
@@ -234,6 +247,7 @@ class TsvStore {
       existing.Comments = partial.Comments ?? existing.Comments;
       existing.Credits = Number(partial.Credits ?? existing.Credits);
       existing.Admin = partial.Admin !== undefined ? Boolean(partial.Admin) : existing.Admin;
+      existing.years_of_service = Number(partial.years_of_service ?? existing.years_of_service ?? 0);
       existing.login_code = partial.login_code !== undefined ? Number(partial.login_code || 0) : existing.login_code;
       existing.code_generated_when = partial.code_generated_when ?? existing.code_generated_when;
       existing.last_failed_login = partial.last_failed_login ?? existing.last_failed_login;
@@ -263,6 +277,7 @@ class TsvStore {
       login_code: Number(partial.login_code || 0),
       code_generated_when: partial.code_generated_when ?? partial.Email_code_sent ?? '',
       Admin: Boolean(partial.Admin),
+      years_of_service: Number(partial.years_of_service || 0),
       Creation_date: now,
       Last_mod_date: now,
       last_failed_login: partial.last_failed_login ?? '',
@@ -289,6 +304,9 @@ class TsvStore {
     if (updates.Credits !== undefined) {
       existing.Credits = Number(updates.Credits);
     }
+    if (updates.years_of_service !== undefined) {
+      existing.years_of_service = Number(updates.years_of_service);
+    }
     if (updates.Admin !== undefined) {
       existing.Admin = Boolean(updates.Admin);
     }
@@ -308,6 +326,7 @@ class TsvStore {
     const choiceMap = new Map(orderedChoiceNumbers.map((n, idx) => [n, idx + 1]));
 
     for (const input of requests) {
+      const hutCount = HUTS.filter((h) => Boolean(input[h])).length;
       const normalizedChoice = choiceMap.get(Number(input.Choice_Number)) || 1;
       this.requests.push({
         Requestor_ID: rid,
@@ -323,9 +342,12 @@ class TsvStore {
         Hut_granted: input.Hut_granted || '',
         Spots_granted: Number(input.Spots_granted || 0),
         Status: input.Status || 'requested',
+        Lottery_value: Number(input.Lottery_value || 0),
         Confirmed_How: input.Confirmed_How || '',
         Creation_date: input.Creation_date || now,
         Last_mod_date: now,
+        hut_count_flexibility: Number(input.hut_count_flexibility || hutCount || 0),
+        saturday_week_number: input.saturday_week_number || closestSaturdayWeekKey(input.Arrival, input.Departure),
       });
     }
 

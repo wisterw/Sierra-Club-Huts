@@ -690,24 +690,23 @@ async function renderAdmin() {
         <div id="upload-msg"></div>
       </div>
       <div class="kpi-card">
-        <h3>Downloads</h3>
+        <h3>Download Requests</h3>
         <div class="inline-actions">
-          <button data-dl="all">All requestors</button>
-          <button data-dl="no-pending-requests">No pending</button>
-          <button data-dl="no-likely-requests">No likely</button>
-          <button data-dl="no-assigned-requests">No assigned</button>
-        </div>
-        <div class="inline-actions" style="margin-top:.5rem;">
-          <button id="download-joined">Requests joined report</button>
+          <button id="download-joined">Download joined requests</button>
         </div>
       </div>
       <div class="kpi-card">
-        <h3>Assignment + Efficiency</h3>
+        <h3>Run Assignment</h3>
         <div class="inline-actions">
           <button id="run-assignment">Run assignment</button>
-          <button id="load-efficiency">Load efficiency report</button>
         </div>
         <div id="assign-msg"></div>
+      </div>
+      <div class="kpi-card">
+        <h3>Efficiency Report</h3>
+        <div class="inline-actions">
+          <button id="load-efficiency">Load efficiency report</button>
+        </div>
         <div id="eff-table"></div>
       </div>
     </div>
@@ -721,9 +720,6 @@ async function renderAdmin() {
     document.getElementById('upload-msg').textContent = res.ok ? `Upserted ${data.createdOrUpdated} records.` : data.error;
   });
 
-  for (const btn of el.tabAdmin.querySelectorAll('[data-dl]')) {
-    btn.addEventListener('click', () => download(`/api/admin/download/requestors?filter=${btn.dataset.dl}`));
-  }
   document.getElementById('download-joined').addEventListener('click', () => {
     download('/api/admin/download/requests-joined');
   });
@@ -756,8 +752,8 @@ async function loadMeAndRender() {
   el.adminTabBtn.classList.toggle('hidden', !me.Admin);
 
   renderSession();
-  renderProfile();
   await renderRequests();
+  renderProfile();
   await renderAdmin();
 }
 
