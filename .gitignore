@@ -1,5 +1,6 @@
 node_modules/
 .env
 data/requestors.tsv
+data/requests.tsv
 SierraClubKeyPair.pem
 Docs/credentials.md
