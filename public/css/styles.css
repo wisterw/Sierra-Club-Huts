@@ -153,6 +153,20 @@ button:hover { border-color: var(--accent); }
   gap: 0.45rem;
 }
 
+.download-switch {
+  display: grid;
+  gap: 0.35rem;
+  margin-bottom: 0.55rem;
+  font-size: 0.9rem;
+  color: var(--muted);
+}
+
+.download-switch label {
+  display: flex;
+  align-items: center;
+  gap: 0.45rem;
+}
+
 .checkbox-grid {
   display: grid;
   gap: 0.4rem;

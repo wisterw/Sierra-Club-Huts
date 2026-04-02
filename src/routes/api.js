@@ -324,7 +324,8 @@ router.get('/admin/download/requestors', requireAuth, requireAdmin, (req, res) =
 
 router.get('/admin/download/requests-joined', requireAuth, requireAdmin, (req, res) => {
   const requestorsById = new Map(store.listRequestors().map((r) => [r.Requestor_ID, r]));
-  const joined = requestsJoinedReport(store.listRequests(), requestorsById);
+  const filter = String(req.query.filter || 'all');
+  const joined = requestsJoinedReport(store.listRequests(), requestorsById, { filter });
   const headers = [
     'Requestor_ID',
     'Email',

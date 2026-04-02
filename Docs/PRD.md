@@ -198,6 +198,11 @@ Sort the results by:
   4. hut_count_flexibility
   5. Lottery_value
   
+Provide a radio group next to this action which has three options:
+* Include all requests
+* Granted requests only
+* Requestors with no requests
+
 #### Run assignment algorithm
 (as described below in this document)
 

@@ -285,7 +285,8 @@ function efficiencyReport(requests) {
     }));
 }
 
-function requestsJoinedReport(requests, requestorsById) {
+function requestsJoinedReport(requests, requestorsById, options = {}) {
+  const filter = options.filter || 'all';
   const byRequestor = new Map();
   for (const req of requests) {
     const id = Number(req.Requestor_ID);
@@ -296,6 +297,11 @@ function requestsJoinedReport(requests, requestorsById) {
   const out = [];
   for (const requestor of requestorsById.values()) {
     const reqs = byRequestor.get(Number(requestor.Requestor_ID)) || [];
+    const hasRequests = reqs.length > 0;
+    if (filter === 'none' && hasRequests) {
+      continue;
+    }
+
     if (!reqs.length) {
       out.push({
         Requestor_ID: requestor.Requestor_ID,
@@ -336,7 +342,15 @@ function requestsJoinedReport(requests, requestorsById) {
       continue;
     }
 
-    for (const req of reqs) {
+    const filteredReqs = filter === 'granted'
+      ? reqs.filter((r) => r.Status === 'granted')
+      : reqs;
+
+    if (filter === 'granted' && !filteredReqs.length) {
+      continue;
+    }
+
+    for (const req of filteredReqs) {
       const hutsCount = HUTS.filter((h) => req[h]).length;
       out.push({
         Requestor_ID: requestor.Requestor_ID,

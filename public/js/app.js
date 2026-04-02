@@ -691,6 +691,11 @@ async function renderAdmin() {
       </div>
       <div class="kpi-card">
         <h3>Download Requests</h3>
+        <div class="download-switch">
+          <label><input type="radio" name="download-filter" value="all" checked /> Include all requests</label>
+          <label><input type="radio" name="download-filter" value="granted" /> Granted requests only</label>
+          <label><input type="radio" name="download-filter" value="none" /> Requestors with no requests</label>
+        </div>
         <div class="inline-actions">
           <button id="download-joined">Download joined requests</button>
         </div>
@@ -721,7 +726,9 @@ async function renderAdmin() {
   });
 
   document.getElementById('download-joined').addEventListener('click', () => {
-    download('/api/admin/download/requests-joined');
+    const selected = el.tabAdmin.querySelector('input[name="download-filter"]:checked');
+    const filter = selected ? selected.value : 'all';
+    download(`/api/admin/download/requests-joined?filter=${filter}`);
   });
 
   document.getElementById('run-assignment').addEventListener('click', async () => {
