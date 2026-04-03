@@ -72,6 +72,7 @@ router.post('/send-email', async (req, res) => {
     requestor.code_generated_when = new Date().toISOString();
     requestor.Last_mod_date = new Date().toISOString();
     store.markDirty();
+    console.info(`sendEmail: login code for ${requestor.Email}: ${code}`);
 
     try {
       await sendLoginCodeEmail(requestor.Email, code);
