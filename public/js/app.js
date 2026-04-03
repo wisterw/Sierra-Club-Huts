@@ -382,6 +382,10 @@ function maxSpotsForModes(hutModes) {
   return 15;
 }
 
+function infoIcon(text) {
+  return `<span class="info-icon" title="${text}">i</span>`;
+}
+
 function renderRequestCard(choice, idx, activeIndex, container) {
   const node = el.requestCardTpl.content.firstElementChild.cloneNode(true);
   const active = idx === activeIndex;
@@ -403,9 +407,14 @@ function renderRequestCard(choice, idx, activeIndex, container) {
     const maxSpots = maxSpotsForModes(choice.hutModes);
     const comboSelected = choice.hutModes.some((m) => COMBO_MODES.includes(m));
     details.innerHTML = `
-      <label>Choice Number<input data-k="choiceNumber" type="number" min="1" value="${choice.choiceNumber}" /></label>
+      <label>Choice Number
+        <div class="choice-number-wrap">
+          <input data-k="choiceNumber" type="number" min="1" value="${choice.choiceNumber}" />
+          ${infoIcon('Add your requests in priority order. Check the availability preview on the right to reduce overlap.')}
+        </div>
+      </label>
       <fieldset>
-        <legend>Hut Choices (multi-select checkboxes)</legend>
+        <legend>Hut Choices (multi-select checkboxes) ${infoIcon('Including more huts helps your odds, but you may end up with any hut. Use extra choices for lower priorities.')}</legend>
         <div class="checkbox-grid">
           ${ALL_HUT_MODES.map((m) => `<label class="checkbox-option"><input type="checkbox" data-mode="${m}" ${choice.hutModes.includes(m) ? 'checked' : ''} /><span>${m}</span></label>`).join('')}
         </div>

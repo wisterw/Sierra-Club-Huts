@@ -179,6 +179,32 @@ button:hover { border-color: var(--accent); }
   font-size: 0.92rem;
 }
 
+.choice-number-wrap {
+  display: flex;
+  align-items: center;
+  gap: 0.45rem;
+}
+
+.info-icon {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 1.1rem;
+  height: 1.1rem;
+  border-radius: 50%;
+  border: 1px solid var(--line);
+  background: #fff;
+  color: var(--muted);
+  font-size: 0.75rem;
+  font-weight: 700;
+  cursor: help;
+}
+
+.info-icon:hover {
+  border-color: var(--accent);
+  color: var(--accent);
+}
+
 .availability-wrap {
   overflow: auto;
   max-height: 70vh;

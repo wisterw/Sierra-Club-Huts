@@ -53,13 +53,13 @@ The requests tab is the default tab.  The requests tab is split into two panels.
 
 This panel occupies the left of the Requests tab and shows the list of the user’s requests.  
 
-* Requests are shown in priority order (first choice, second choice, etc).  
+* Requests are shown in priority order (first choice, second choice, etc).  Next to the choice number, offer a small info icon which shows on hover: "Add your requests in priority order. Check the availability preview on the right to reduce overlap." 
 * Requests are shown in collapsed (or summary) form by default and can be expanded with a small button with a stylized plus sign, which switches to a minus sign if the choice is expanded.    
 * When a request is expanded, all other requests are collapsed, leaving only one request expanded and in focus at a time.    
 * Initially, the user has no requests, and one blank request is provided.     
 * By default, the first choice request is expanded and the other choices are shown in collapsed form.
 * The request details include:  
-  * Hut (checkboxes).  Multiple choices are allowed.  At least one is required.  Choices are Benson, Bradley, Grubb, Ludlow, Benson-\>Bradley, and Bradley-\>Benson.  
+  * Hut (checkboxes).  Multiple choices are allowed.  At least one is required.  Choices are Benson, Bradley, Grubb, Ludlow, Benson-\>Bradley, and Bradley-\>Benson.  Offer a small "circle-i" info icon which shows the following on hover: "Including more huts helps your odds, but you may end up with any hut.  Use extra choices for lower priorities."
   * For the combination trips Benson-\>Bradley and Bradley-\>Benson, both can be selectable.  In general, the user at this point is just indicating which trips they are interested in.  We will pick the one that allocates the space most efficiently to all the users and then the requestor will just take that one trip.
   * Arrival / check-in (date picker).  Required.  
   * Departure / check-in (date picker).  Required.  

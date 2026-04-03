@@ -6,21 +6,15 @@ The Sierra Club ski hut volunteers earn early reservation privileges through the
 
 Your email has already been recorded in the system by the work party leaders.  When you enter your email we will send a temporary code to that email if it is in the system.  Your browser will remember you for 7 days after a successful login.
 
+### Requests tab
+
+The request tab is split into two panels.  The left panel shows the user’s “choices list” (first choice, second choice, etc.).  The right panel is an “availability view” of sleeping spots, reflecting other volunteers' requests.
+
+We recommend entering your preferences early, to stake out your preferences, and then checking back again closer to the deadline to see how the rest of the group has settled out.
+
 ### Profile tab
 
 Check your profile and update any missing information.
-
-### Requests tab
-
-The request tab is split into two panels.  The left panel shows the user’s “choices list” (first choice, second choice, etc.).  The right panel is a detailed “availability view” of the schedule linked to the selected choice and showing availability from a few days before until a few days after the selected date range.
-
-Add your requests in priority order.  As you go, check the right side availability preview to reduce the risk of overlap.  Check as many huts as you are able to, and be flexible with your group size, since that will improve your chances.   You can also enter different huts as different choices (e.g. second choice) if you favor one hut over another.
-
-In the availability view:
-The grid covers December 15 of the current year through April 30 of the following year (inclusive).  There is a legend above the grid that explains the current choice border and the yellow/red shading.
-* The heavy border indicates your selected dates and huts.
-* The yellow cells are vulnerable in a lottery because other group(s) have pending requests of the same priority.  You may want to find other dates or choose more huts or reduce your group size.
-* The pink cells are not available because of higher-priority requests.    Find other dates or choose more huts or reduce your group size.  Or, you can hope the other requestor(s) change their requests before the cut-off date.
 
 ## For administrators
 
