@@ -48,6 +48,16 @@ body {
   box-shadow: 0 10px 24px #1a251b1a;
 }
 
+.panel form {
+  max-width: 100%;
+}
+
+.panel input,
+.panel textarea,
+.panel select {
+  max-width: 100%;
+}
+
 .login-panel form {
   max-width: 420px;
 }
@@ -285,6 +295,15 @@ button:hover { border-color: var(--accent); }
   border: 1px solid var(--line);
   border-radius: 0.55rem;
   padding: 0.55rem;
+  overflow: hidden;
+}
+
+.kpi-card .inline-actions {
+  flex-wrap: wrap;
+}
+
+.kpi-card .inline-actions button {
+  max-width: 100%;
 }
 
 @media (max-width: 980px) {

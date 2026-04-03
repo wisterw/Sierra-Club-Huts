@@ -699,22 +699,22 @@ async function renderAdmin() {
         <div id="upload-msg"></div>
       </div>
       <div class="kpi-card">
+        <h3>Run Assignment</h3>
+        <div class="inline-actions">
+          <button id="run-assignment">Run assignment</button>
+        </div>
+        <div id="assign-msg"></div>
+      </div>
+      <div class="kpi-card">
         <h3>Download Requests</h3>
         <div class="download-switch">
-          <label><input type="radio" name="download-filter" value="all" checked /> Include all requests</label>
+          <label><input type="radio" name="download-filter" value="all" checked /> All requests</label>
           <label><input type="radio" name="download-filter" value="granted" /> Granted requests only</label>
           <label><input type="radio" name="download-filter" value="none" /> Requestors with no requests</label>
         </div>
         <div class="inline-actions">
           <button id="download-joined">Download joined requests</button>
         </div>
-      </div>
-      <div class="kpi-card">
-        <h3>Run Assignment</h3>
-        <div class="inline-actions">
-          <button id="run-assignment">Run assignment</button>
-        </div>
-        <div id="assign-msg"></div>
       </div>
       <div class="kpi-card">
         <h3>Efficiency Report</h3>

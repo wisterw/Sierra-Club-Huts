@@ -75,7 +75,7 @@ WantedBy=multi-user.target
 ```
 
 **Reverse proxy note**
-If you want HTTPS, terminate TLS with an AWS load balancer or Nginx and forward to `http://127.0.0.1:3000`. When you do this, set `TRUST_PROXY=1` and `SESSION_SECURE=true` so cookies are marked secure only over HTTPS.
+If you want HTTPS, terminate TLS with an AWS load balancer or Nginx and forward to `http://127.0.0.1:3000`. When you do this, set `TRUST_PROXY=1` and `SESSION_SECURE=true` so cookies are marked secure only over HTTPS. If you are accessing the app over plain HTTP, keep `SESSION_SECURE` unset (or `false`) or the session cookie will not be accepted.
 
 ## For Developers
 

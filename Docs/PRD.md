@@ -150,6 +150,9 @@ The admin tab has a clickable list of available actions.  Actions include:
 #### Upload list of requestors 
 Upload a tab-delimited file.  This will create new records where a requestor’s email does not exist already, and update records where the email is already present.  
 
+#### Run assignment algorithm
+(as described below in this document)
+
 #### Download requests
 This action provides an administrator a look at the full data set, with requests and requestors joined together.  Include the following fields:
  * From requestors:
@@ -199,12 +202,9 @@ Sort the results by:
   5. Lottery_value
   
 Provide a radio group next to this action which has three options:
-* Include all requests
+* All requests
 * Granted requests only
 * Requestors with no requests
-
-#### Run assignment algorithm
-(as described below in this document)
 
 #### Efficiency report
 Calculate the % of requesting groups (and spots) who got their first choice, second choice, etc.
