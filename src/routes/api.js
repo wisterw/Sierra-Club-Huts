@@ -18,6 +18,7 @@ const upload = multer();
 const router = express.Router();
 const store = new TsvStore();
 const AUTH_FAILURE_MESSAGE = 'Login failure, please try again later or contact the hut administrator.';
+const DEBUG_LOGIN = process.env.DEBUG_LOGIN === '1';
 
 function appendEmailErrorLog(email, err) {
   try {
@@ -72,7 +73,9 @@ router.post('/send-email', async (req, res) => {
     requestor.code_generated_when = new Date().toISOString();
     requestor.Last_mod_date = new Date().toISOString();
     store.markDirty();
-    console.info(`sendEmail: login code for ${requestor.Email}: ${code}`);
+    if (DEBUG_LOGIN) {
+      console.info(`sendEmail: login code for ${requestor.Email}: ${code}`);
+    }
 
     try {
       await sendLoginCodeEmail(requestor.Email, code);
@@ -114,10 +117,30 @@ router.post('/check-login', (req, res) => {
     }
 
     if (isOlderThanMinutes(requestor.code_generated_when, 10)) {
+      if (DEBUG_LOGIN) {
+        console.info('checkLogin: code expired', {
+          email,
+          storedCode: Number(requestor.login_code),
+          codeGeneratedWhen: requestor.code_generated_when,
+        });
+      }
       return res.status(401).json({ error: AUTH_FAILURE_MESSAGE });
     }
 
-    if (providedCode === null || providedCode !== requestor.login_code) {
+    const storedCode = Number(requestor.login_code);
+    if (DEBUG_LOGIN) {
+      console.info('checkLogin: compare codes', {
+        email,
+        providedCode,
+        storedCode,
+        providedType: typeof providedCode,
+        storedType: typeof storedCode,
+        codeGeneratedWhen: requestor.code_generated_when,
+        lastFailedLogin: requestor.last_failed_login,
+      });
+    }
+
+    if (providedCode === null || providedCode !== storedCode) {
       requestor.last_failed_login = new Date().toISOString();
       requestor.Last_mod_date = new Date().toISOString();
       store.markDirty();
