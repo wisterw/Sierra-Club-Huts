@@ -211,38 +211,13 @@ Calculate the % of requesting groups (and spots) who got their first choice, sec
 
 ## Assignment Algorithm
 
-The goal of the assignment algorithm is to match requests to huts to maximize the number of requestors receiving a choice as close as possible to their first choice, while respecting the priorities of the different requestors.  The algorithm operates as follows:  
-### Setup
-1. Set all requests to "requested" to reset from prior runs.
-2. Set all request spots_granted to spots_ideal.  These may be decremented in the case of contention between groups as the algorithm proceeds.
-3. hut_count_flexibility should be set already but can re-calculate this for all rows in case there have been edits to the requests file from some other source.
-4. saturday_week_number should be set already but can re-calculate this for all rows in case there have been edits to the requests file from some other source.
-### Build Lottery Groups
-Group requests.  Skip requests with status "not-needed". Process in order:
-* requestors with the highest credit first.
-* within requestors with the same credit level, requests with the lowest choice number first.
-* within requests with the same credit level and choice number, group by the same saturday_week_number.
-* For each combination of credit level, choice number, and week, group by hut_count_flexibility (4,3,2,1), working with the highest hut_count_flexibility first.
-### Run Lotteries
-* For all the requests of the same credit level, choice number, saturday_week_number, and hut_count_flexibility, assign a random lottery # to Lottery_value.
-* Skip over requests with status "not-needed" -- these requestors already have received their request.
-* Working through the requests in order of their Lottery_value:
-  * Calculate the available spots for each hut and for each night of the requested trip.
-  * Compare to the requested ideal # of spots in that request.
-     * If there are spots available, set hut_granted to the hut with the most available spots.  If there are multiple huts with the same # of available spots, and the request is open to multiple huts, favor Ludlow, then Benson, then Bradley, then Grubb (from the subset of options the user has indicated they are open to).  Set request status to granted.  Set the lower-choice requests for this requestor to "not-needed".
-     * (else) If there are not enough available spots, reduce the spots_granted by 1 and try again.  Continue decrementing spots_granted as long as it is at or equal to spots_min.
-     * If we have reduced spots_granted to spots_min and request now fits (there are spots available), set hut_granted to the identified hut.  Set status to granted.  Set the lower-choice requests for this requestor to "not-needed".
-     * (else) There are still not enough available spots in any hut, we can try to reduce the other requests to free up spots:
-        * For each night and hut in the request, calculate the maximum available spots (as if each other request were at its spots_min).
-        * If the maximum available spots is less than the current request spots_min for any date, there is no way to fit the current request.  Set request status to lost-lottery.
-        * (else) There are spots available for all requested dates by reducing other requests.  
-          * Identify all the other requests for any of the requested huts and all of the contentious dates, including across requests of higher credit levels and choice numbers.  
-          * As you go, sum the available potential spots if we were to reduce those requests from spots_ideal to spots_min.
-          * Narrow the search to the hut with the most available potential spots in a spot reduction.
-          * Working through the other requests in random order, reduce spots_granted in those other requests by one (if there is room to reduce without falling below that request's minimum required spots) until the spot deficit becomes zero.
-          * Set hut_granted.
-          * Set status to granted.
-          * Set the lower-choice requests for this requestor to "not-needed".
+The goal of the assignment algorithm is to fulfill hut requests.
+1. Maximize the number of users who have a request fulfilled.
+2. Maximize the number of first choice requests.  If if a first-choice-requested hut does not have available spots, move to the second choice, third choice, etc.
+3. If necessary, reduce the number of spots requested (down to the minimum acceptable spots), or look at other huts if the request is open to other huts.
+4. In the case of a conflict, prioritize users with more work credits above users with fewer work credits.
+5. In the case of a conflict between users with the same work credits, choose the user for whom that request is ranked closer to their first choice.
+6. In the case of a conflict between users with the same work credit and same choice number, choose the winner that will maximize the overall number of granted requests, or choose at random.
 
 ## Appendix: Hut and trip capacities
 

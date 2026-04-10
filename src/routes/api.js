@@ -394,7 +394,8 @@ router.get('/admin/download/requests-joined', requireAuth, requireAdmin, (req, r
 
 router.post('/admin/run-assignment', requireAuth, requireAdmin, (req, res) => {
   const requestorsById = new Map(store.listRequestors().map((r) => [r.Requestor_ID, r]));
-  runAssignment(store.requests, requestorsById);
+  const seed = req.body?.seed;
+  runAssignment(store.requests, requestorsById, { seed });
   store.markDirty();
   return res.json({ ok: true, message: 'Assignment completed.' });
 });

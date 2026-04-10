@@ -6,6 +6,32 @@ const HUT_TIEBREAK_ORDER = ['Ludlow', 'Benson', 'Bradley', 'Grubb'];
 const STATUS_GRANTED = new Set(['granted', 'confirmed']);
 const STATUS_REQUESTED = new Set(['requested', 'pending']);
 
+function stringToSeed(str) {
+  let h = 1779033703 ^ str.length;
+  for (let i = 0; i < str.length; i += 1) {
+    h = Math.imul(h ^ str.charCodeAt(i), 3432918353);
+    h = (h << 13) | (h >>> 19);
+  }
+  return (h >>> 0);
+}
+
+function mulberry32(a) {
+  return () => {
+    let t = (a += 0x6D2B79F5);
+    t = Math.imul(t ^ (t >>> 15), t | 1);
+    t ^= t + Math.imul(t ^ (t >>> 7), t | 61);
+    return ((t ^ (t >>> 14)) >>> 0) / 4294967296;
+  };
+}
+
+function createRng(seed) {
+  if (seed === undefined || seed === null || seed === '') {
+    return Math.random;
+  }
+  const normalized = typeof seed === 'number' ? String(seed) : String(seed);
+  return mulberry32(stringToSeed(normalized));
+}
+
 function isGranted(req) {
   return STATUS_GRANTED.has(req.Status);
 }
@@ -77,126 +103,50 @@ function commitAssignment(req, hut, occupancy) {
   adjustOccupancy(occupancy, req, grant);
 }
 
-function markLowerChoicesNotNeeded(requests, requestorId, choiceNumber) {
+function markOtherChoicesNotNeeded(requests, requestorId, choiceNumber, grantedReq) {
   const now = new Date().toISOString();
   for (const r of requests) {
     if (Number(r.Requestor_ID) !== Number(requestorId)) continue;
-    if (Number(r.Choice_Number) > Number(choiceNumber)) {
+    if (r === grantedReq) continue;
+    if (Number(r.Choice_Number) >= Number(choiceNumber)) {
       r.Status = 'not-needed';
       r.Last_mod_date = now;
     }
   }
 }
 
-function overlapAny(nightsSet, req) {
-  for (const night of dateRangeNights(req.Arrival, req.Departure)) {
-    if (nightsSet.has(night)) return true;
-  }
-  return false;
+function requestNights(req) {
+  return dateRangeNights(req.Arrival, req.Departure);
 }
 
-function maxPotentialRemaining(hut, nights, requests, excludeReq) {
-  let minRemaining = Infinity;
-  for (const night of nights) {
-    let usedMin = 0;
-    for (const r of requests) {
-      if (r === excludeReq) continue;
-      if (!isGranted(r)) continue;
-      if (r.Hut_granted !== hut) continue;
-      if (!overlapAny(new Set([night]), r)) continue;
-      const minSpots = Number(r.Spots_min || r.Spots_ideal || 0);
-      usedMin += minSpots;
-    }
-    const remaining = HUT_CAPACITY[hut] - usedMin;
-    if (remaining < minRemaining) minRemaining = remaining;
-  }
-  return minRemaining;
+function requestMinSpots(req) {
+  return Number(req.Spots_min ?? req.Spots_ideal ?? 0);
 }
 
-function reduceOthersUntilFit(req, hut, nights, occupancy, requests) {
-  const nightsSet = new Set(nights);
-  const candidates = requests.filter((r) => (
-    r !== req
-    && isGranted(r)
-    && r.Hut_granted === hut
-    && overlapAny(nightsSet, r)
-  ));
-
-  const minSpots = Number(req.Spots_min || req.Spots_ideal || 0);
-  const fitsNow = () => availableMinRemaining(hut, nights, occupancy) >= minSpots;
-
-  let progress = true;
-  while (!fitsNow() && progress) {
-    progress = false;
-    const shuffled = candidates.slice().sort(() => Math.random() - 0.5);
-    for (const other of shuffled) {
-      const otherMin = Number(other.Spots_min || other.Spots_ideal || 0);
-      if (Number(other.Spots_granted || 0) <= otherMin) continue;
-      other.Spots_granted = Number(other.Spots_granted || 0) - 1;
-      adjustOccupancy(occupancy, other, -1);
-      progress = true;
-      if (fitsNow()) break;
-    }
-  }
-
-  return fitsNow();
+function requestIdealSpots(req) {
+  return Number(req.Spots_ideal ?? 0);
 }
 
-function processRequest(req, requests, occupancy) {
+function findAssignment(req, occupancy) {
   const huts = hutsForRequest(req);
-  if (!huts.length) {
-    req.Status = 'lost-lottery';
-    req.Last_mod_date = new Date().toISOString();
-    return;
-  }
+  if (!huts.length) return null;
 
-  const nights = dateRangeNights(req.Arrival, req.Departure);
-  const minSpots = Number(req.Spots_min || req.Spots_ideal || 0);
-  const idealSpots = Number(req.Spots_ideal || 0);
+  const nights = requestNights(req);
+  const minSpots = requestMinSpots(req);
+  const idealSpots = requestIdealSpots(req);
 
   for (let spots = idealSpots; spots >= minSpots; spots -= 1) {
-    req.Spots_granted = spots;
     const bestHut = chooseBestHut(huts, nights, occupancy, spots);
     if (bestHut) {
-      commitAssignment(req, bestHut, occupancy);
-      markLowerChoicesNotNeeded(requests, req.Requestor_ID, req.Choice_Number);
-      return;
+      return { hut: bestHut, spots };
     }
   }
 
-  req.Spots_granted = minSpots;
-
-  const potential = huts
-    .map((hut) => ({
-      hut,
-      potential: maxPotentialRemaining(hut, nights, requests, req),
-    }))
-    .filter((row) => row.potential >= minSpots);
-
-  if (!potential.length) {
-    req.Status = 'lost-lottery';
-    req.Last_mod_date = new Date().toISOString();
-    return;
-  }
-
-  potential.sort((a, b) => {
-    if (b.potential !== a.potential) return b.potential - a.potential;
-    return HUT_TIEBREAK_ORDER.indexOf(a.hut) - HUT_TIEBREAK_ORDER.indexOf(b.hut);
-  });
-
-  const targetHut = potential[0].hut;
-  const success = reduceOthersUntilFit(req, targetHut, nights, occupancy, requests);
-  if (!success) {
-    req.Status = 'lost-lottery';
-    req.Last_mod_date = new Date().toISOString();
-    return;
-  }
-
-  commitAssignment(req, targetHut, occupancy);
-  markLowerChoicesNotNeeded(requests, req.Requestor_ID, req.Choice_Number);
+  return null;
 }
 
-function runAssignment(requests, requestorsById) {
+function runAssignment(requests, requestorsById, options = {}) {
+  const rng = createRng(options.seed);
   const now = new Date().toISOString();
   for (const req of requests) {
     normalizeStatus(req);
@@ -211,46 +161,58 @@ function runAssignment(requests, requestorsById) {
   }
 
   const occupancy = buildOccupancy(requests);
-  const groups = new Map();
+  const grantedRequestors = new Set();
+  const maxChoice = requests.reduce((max, r) => Math.max(max, Number(r.Choice_Number || 0)), 0);
 
-  for (const req of requests) {
-    if (req.Status === 'not-needed') continue;
-    const credits = Number(requestorsById.get(Number(req.Requestor_ID))?.Credits || 0);
-    const choice = Number(req.Choice_Number || 0);
-    const week = closestSaturdayWeekKey(req.Arrival, req.Departure);
-    const flex = hutsForRequest(req).length;
-    const key = `${credits}|${choice}|${week}|${flex}`;
-    if (!groups.has(key)) {
-      groups.set(key, {
-        credits,
-        choice,
-        week,
+  const getCredits = (req) => Number(requestorsById.get(Number(req.Requestor_ID))?.Credits || 0);
+
+  for (let choice = 1; choice <= maxChoice; choice += 1) {
+    const candidates = requests.filter((r) => (
+      r.Status === 'requested'
+      && Number(r.Choice_Number) === choice
+      && !grantedRequestors.has(Number(r.Requestor_ID))
+    ));
+
+    const scored = candidates.map((req) => {
+      req.Lottery_value = rng();
+      const nights = requestNights(req).length;
+      const minSpots = requestMinSpots(req);
+      const impact = minSpots * nights;
+      const flex = hutsForRequest(req).length;
+      return {
+        req,
+        credits: getCredits(req),
+        impact,
         flex,
-        requests: [],
-      });
+      };
+    });
+
+    scored.sort((a, b) => {
+      if (b.credits !== a.credits) return b.credits - a.credits;
+      if (a.impact !== b.impact) return a.impact - b.impact;
+      if (a.flex !== b.flex) return a.flex - b.flex;
+      return Number(a.req.Lottery_value || 0) - Number(b.req.Lottery_value || 0);
+    });
+
+    for (const row of scored) {
+      const req = row.req;
+      if (req.Status !== 'requested') continue;
+      if (grantedRequestors.has(Number(req.Requestor_ID))) continue;
+
+      const assignment = findAssignment(req, occupancy);
+      if (!assignment) continue;
+
+      req.Spots_granted = assignment.spots;
+      commitAssignment(req, assignment.hut, occupancy);
+      grantedRequestors.add(Number(req.Requestor_ID));
+      markOtherChoicesNotNeeded(requests, req.Requestor_ID, req.Choice_Number, req);
     }
-    groups.get(key).requests.push(req);
   }
 
-  const orderedGroups = [...groups.values()].sort((a, b) => {
-    if (b.credits !== a.credits) return b.credits - a.credits;
-    if (a.choice !== b.choice) return a.choice - b.choice;
-    if (a.week !== b.week) return a.week.localeCompare(b.week);
-    if (b.flex !== a.flex) return b.flex - a.flex;
-    return 0;
-  });
-
-  for (const group of orderedGroups) {
-    const shuffled = group.requests
-      .map((req) => {
-        req.Lottery_value = Math.random();
-        return req;
-      })
-      .sort((a, b) => a.Lottery_value - b.Lottery_value);
-
-    for (const req of shuffled) {
-      if (req.Status === 'not-needed') continue;
-      processRequest(req, requests, occupancy);
+  for (const req of requests) {
+    if (req.Status === 'requested') {
+      req.Status = 'lost-lottery';
+      req.Last_mod_date = new Date().toISOString();
     }
   }
 }

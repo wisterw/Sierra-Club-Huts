@@ -104,7 +104,8 @@ function summarize(requests) {
 
 function run() {
   const { requestors, requests } = buildSample();
-  runAssignment(requests, requestors);
+  const seed = process.argv[2];
+  runAssignment(requests, requestors, { seed });
   console.table(summarize(requests));
 }
 

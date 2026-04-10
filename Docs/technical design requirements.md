@@ -22,13 +22,14 @@ We will use tab-delimited, row/column style files suitable for a relational appr
   * last\_failed\_login (datetime).  When was the last bad login code entered (for limiting brute force attacks)
   * years of service.  How many of the prior 3 years the requestor has volunteered.
 
-* Requests.  The primary key consists of four columns: Requestor\_ID, Hut, arrival date, and departure date.  
+* Requests.
+  * Request\_ID (integer).  Primary key.
   * Requestor\_ID (Integer).  
   * Benson.  Boolean.  
   * Bradley.  Boolean.  
   * Grubb.  Boolean  
   * Ludlow.  Boolean.  
-  * Arrival (date).  Check-in date.   
+  * Arrival (date).  Check-in date.   For combination trips, the second arrival should be the same as the first departure.
   * Departure (date).  Ending date (check-out) of the hut stay.  Must be after Arrival.  
   * Choice\_Number (integer).  For example, 1 \= first choice, 2 \= second choice, etc.  A combination trip will have the same choice number twice with contiguous (non-overlapping) dates, for example a first choice with Benson and another first choice with Bradley, and the arrival date for the second request matches the departure date for the first request.
   * Spots\_ideal.  Number of people requested.  Required to be between 1 and 15 (12 max for some huts).    
@@ -40,14 +41,17 @@ We will use tab-delimited, row/column style files suitable for a relational appr
   * Creation\_date. (datetime).  When was the request created.  
   * Last\_mod\_date. (datetime).  When was this request last edited.
   * hut_count_flexibility (integer).  How many huts the request is open to.  This is a calculated field, based on the # of huts marked TRUE.
-  * saturday_week_number (integer).  Using the saturday closest to the midpoint of the trip, which saturday does the trip cover.  This is calculated from the (departure date - arrival date) / 2 to get the midpoint, then find the closest saturday to that midpoint and calculate the week number for that saturday.
-  * Request list verification when saving:
-    * Verify departure is after arrival.
-    * For combination trips, verify traverse date is after arrival and before departure.
-    * Verify minimum spots requested is less than or equal to ideal spots requested.
-    * Verify choice numbers are 1 or greater; close gaps to keep them sequential.
-    * Verify trip length is 5 days or fewer.
-    * Verify arrival/departure are between Dec 15 (current year) and Apr 30 (next year).
+  * saturday_week_number (integer).  This is a calculated field.  Using the saturday closest to the midpoint of the trip, which saturday does the trip cover.  This is calculated from the (departure date - arrival date) / 2 to get the midpoint, then find the closest saturday to that midpoint and calculate the week number for that saturday.
+  * Combination_first_request.  (integer).  The Request\_ID of the first hut.
+
+* Request list verification when saving:
+  * Departure is after arrival.
+  * For combination trips, the arrival for the second request matches the departure for the first hut request.
+  * For combination trips, Grubb and Ludlow are both false (for both the first and second request).
+  * minimum spots requested is less than or equal to ideal spots requested.
+  * choice numbers are 1 or greater; close gaps to keep them sequential.
+  * trip length is 5 days or fewer.
+  * arrival and departure are between Dec 15 (current year) and Apr 30 (next year) inclusive.
 
 ## Constants and settings
 The standard error message for authentication errors is "Login failure, please try again later or contact the hut administrator."
