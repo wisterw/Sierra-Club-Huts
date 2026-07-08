@@ -59,7 +59,7 @@ This is a table to capture the intersection of work parties and requestors.  Thi
   * Spots\_min.  The fewest \# of spots the requestor would accept without going to their next choice.  
   * Hut\_granted.  Which hut was selected of the options.  
   * Spots\_granted.  Spots that were available for confirmed requests.  
-  * Status. (string).  requested, granted, lost-lottery, not-needed.  Default is "requested".  (Legacy values pending/confirmed should be treated as requested/granted.)
+  * Status. (string).  requested, granted, lost-lottery, not-used.  Default is "requested".  (Legacy values pending/confirmed should be treated as requested/granted.)
   * Lottery_value.  random # generated for the assignment lottery.  
   * Creation\_date. (datetime).  When was the request created.  
   * Last\_mod\_date. (datetime).  When was this request last edited.

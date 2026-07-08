@@ -40,6 +40,9 @@ function normalizeStatus(req) {
   if (!req.Status || STATUS_REQUESTED.has(req.Status)) {
     req.Status = 'requested';
   }
+  if (req.Status === 'not-needed') {
+    req.Status = 'not-used';
+  }
 }
 
 function buildOccupancy(requests) {
@@ -98,18 +101,21 @@ function commitAssignment(req, hut, occupancy) {
   const grant = Number(req.Spots_granted || 0);
   req.Hut_granted = hut;
   req.Status = 'granted';
-  req.Confirmed_How = 'won-lottery';
+  req.Assignment_audit = `Granted ${grant} spot(s) at ${hut}.`;
+  req.Confirmed_How = req.Assignment_audit;
   req.Last_mod_date = new Date().toISOString();
   adjustOccupancy(occupancy, req, grant);
 }
 
-function markOtherChoicesNotNeeded(requests, requestorId, choiceNumber, grantedReq) {
+function markOtherChoicesNotUsed(requests, requestorId, choiceNumber, grantedReq) {
   const now = new Date().toISOString();
   for (const r of requests) {
     if (Number(r.Requestor_ID) !== Number(requestorId)) continue;
     if (r === grantedReq) continue;
     if (Number(r.Choice_Number) >= Number(choiceNumber)) {
-      r.Status = 'not-needed';
+      r.Status = 'not-used';
+      r.Assignment_audit = `Skipped because choice ${choiceNumber} was granted.`;
+      r.Confirmed_How = r.Assignment_audit;
       r.Last_mod_date = now;
     }
   }
@@ -154,6 +160,7 @@ function runAssignment(requests, requestorsById, options = {}) {
     req.Hut_granted = '';
     req.Spots_granted = Number(req.Spots_ideal || 0);
     req.Confirmed_How = '';
+    req.Assignment_audit = '';
     req.Lottery_value = Number(req.Lottery_value || 0);
     req.hut_count_flexibility = hutsForRequest(req).length;
     req.saturday_week_number = closestSaturdayWeekKey(req.Arrival, req.Departure);
@@ -205,13 +212,15 @@ function runAssignment(requests, requestorsById, options = {}) {
       req.Spots_granted = assignment.spots;
       commitAssignment(req, assignment.hut, occupancy);
       grantedRequestors.add(Number(req.Requestor_ID));
-      markOtherChoicesNotNeeded(requests, req.Requestor_ID, req.Choice_Number, req);
+      markOtherChoicesNotUsed(requests, req.Requestor_ID, req.Choice_Number, req);
     }
   }
 
   for (const req of requests) {
     if (req.Status === 'requested') {
       req.Status = 'lost-lottery';
+      req.Assignment_audit = 'No requested hut had capacity for the minimum acceptable spots.';
+      req.Confirmed_How = req.Assignment_audit;
       req.Last_mod_date = new Date().toISOString();
     }
   }
@@ -230,21 +239,40 @@ function efficiencyReport(requests) {
   const totalSpots = requests.reduce((sum, r) => sum + Number(r.Spots_ideal || 0), 0) || 1;
 
   const byChoice = new Map();
+  const grantedGroups = new Set();
+  const requestorIdealSpots = new Map();
+  for (const req of requests) {
+    const id = Number(req.Requestor_ID);
+    requestorIdealSpots.set(id, (requestorIdealSpots.get(id) || 0) + Number(req.Spots_ideal || 0));
+  }
   for (const req of requests) {
     if (!isGranted(req)) continue;
     const c = Number(req.Choice_Number);
     if (!byChoice.has(c)) byChoice.set(c, { groups: new Set(), spots: 0 });
     byChoice.get(c).groups.add(req.Requestor_ID);
+    grantedGroups.add(Number(req.Requestor_ID));
     byChoice.get(c).spots += Number(req.Spots_granted || 0);
   }
 
-  return [...byChoice.entries()]
+  const rows = [...byChoice.entries()]
     .sort((a, b) => a[0] - b[0])
     .map(([choice, v]) => ({
       choice,
+      outcome: choice === 1 ? 'first choice' : choice === 2 ? 'second choice' : 'later choice',
       groupsPercent: Number(((v.groups.size / groups) * 100).toFixed(2)),
       spotsPercent: Number(((v.spots / totalSpots) * 100).toFixed(2)),
     }));
+
+  const noChoiceGroups = [...byRequestor.keys()].filter((id) => !grantedGroups.has(Number(id)));
+  const noChoiceSpots = noChoiceGroups.reduce((sum, id) => sum + Number(requestorIdealSpots.get(Number(id)) || 0), 0);
+  rows.push({
+    choice: 'none',
+    outcome: 'no choice',
+    groupsPercent: Number(((noChoiceGroups.length / groups) * 100).toFixed(2)),
+    spotsPercent: Number(((noChoiceSpots / totalSpots) * 100).toFixed(2)),
+  });
+
+  return rows;
 }
 
 function requestsJoinedReport(requests, requestorsById, options = {}) {

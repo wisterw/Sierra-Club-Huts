@@ -2,7 +2,8 @@ const fs = require('fs');
 const express = require('express');
 const multer = require('multer');
 const { EMAIL_ERROR_LOG } = require('../config');
-const { TsvStore, toTsv, REQUESTORS_HEADERS } = require('../data/tsvStore');
+const { toTsv, REQUESTORS_HEADERS } = require('../data/tsvStore');
+const { SqliteStore, boolFromAny } = require('../data/sqliteStore');
 const {
   generateLoginCode,
   isOlderThanMinutes,
@@ -16,7 +17,7 @@ const { runAssignment, efficiencyReport, requestsJoinedReport } = require('../se
 
 const upload = multer();
 const router = express.Router();
-const store = new TsvStore();
+const store = new SqliteStore();
 const AUTH_FAILURE_MESSAGE = 'Login failure, please try again later or contact the hut administrator.';
 const DEBUG_LOGIN = process.env.DEBUG_LOGIN === '1';
 
@@ -34,7 +35,7 @@ function appendEmailErrorLog(email, err) {
 }
 
 function toBoolean(v) {
-  return v === true || v === 'true' || v === 'TRUE' || v === 1 || v === '1';
+  return boolFromAny(v);
 }
 
 function requireAuth(req, res, next) {
@@ -45,17 +46,18 @@ function requireAuth(req, res, next) {
 }
 
 function requireAdmin(req, res, next) {
-  const user = store.getRequestorById(req.session?.userId);
+  const user = store.getRequestorById(req.session?.userId, { includePrivate: true });
   if (!user || !user.Admin) {
     return res.status(403).json({ error: 'Admin privileges required.' });
   }
   return next();
 }
 
-function requestorPayload(requestor) {
+function requestorPayload(requestor, options = {}) {
   return {
     ...requestor,
     requests: store.getRequestsByRequestorId(requestor.Requestor_ID),
+    applicationMode: store.getApplicationMode(),
   };
 }
 
@@ -69,10 +71,10 @@ router.post('/send-email', async (req, res) => {
     }
 
     const code = generateLoginCode();
-    requestor.login_code = code;
-    requestor.code_generated_when = new Date().toISOString();
-    requestor.Last_mod_date = new Date().toISOString();
-    store.markDirty();
+    store.updateRequestorAuthFields(requestor.Requestor_ID, {
+      login_code: code,
+      code_generated_when: new Date().toISOString(),
+    });
     if (DEBUG_LOGIN) {
       console.info(`sendEmail: login code for ${requestor.Email}: ${code}`);
     }
@@ -141,9 +143,9 @@ router.post('/check-login', (req, res) => {
     }
 
     if (providedCode === null || providedCode !== storedCode) {
-      requestor.last_failed_login = new Date().toISOString();
-      requestor.Last_mod_date = new Date().toISOString();
-      store.markDirty();
+      store.updateRequestorAuthFields(requestor.Requestor_ID, {
+        last_failed_login: new Date().toISOString(),
+      });
       return res.status(401).json({ error: AUTH_FAILURE_MESSAGE });
     }
 
@@ -180,7 +182,7 @@ router.get('/me', requireAuth, (req, res) => {
 
 router.get('/requestor/:id', requireAuth, (req, res) => {
   const id = Number(req.params.id);
-  const current = store.getRequestorById(req.session.userId);
+  const current = store.getRequestorById(req.session.userId, { includePrivate: true });
   if (!current) {
     return res.status(404).json({ error: 'Session user not found.' });
   }
@@ -188,7 +190,7 @@ router.get('/requestor/:id', requireAuth, (req, res) => {
     return res.status(403).json({ error: 'Forbidden.' });
   }
 
-  const target = store.getRequestorById(id);
+  const target = store.getRequestorById(id, { includePrivate: current.Admin });
   if (!target) {
     return res.status(404).json({ error: 'Requestor not found.' });
   }
@@ -198,7 +200,7 @@ router.get('/requestor/:id', requireAuth, (req, res) => {
 
 router.put('/requestor/:id', requireAuth, (req, res) => {
   const id = Number(req.params.id);
-  const current = store.getRequestorById(req.session.userId);
+  const current = store.getRequestorById(req.session.userId, { includePrivate: true });
   if (!current) {
     return res.status(404).json({ error: 'Session user not found.' });
   }
@@ -215,14 +217,23 @@ router.put('/requestor/:id', requireAuth, (req, res) => {
     zip: req.body.zip,
     Phone: req.body.Phone,
     Comments: req.body.Comments,
+    has_a_chainsaw: req.body.has_a_chainsaw,
+    chainsaw_user: req.body.chainsaw_user,
+    other_skills: req.body.other_skills,
   };
 
   if (current.Admin) {
     if (req.body.Credits !== undefined) updates.Credits = Number(req.body.Credits);
     if (req.body.Admin !== undefined) updates.Admin = toBoolean(req.body.Admin);
+    if (req.body.years_of_service !== undefined) updates.years_of_service = req.body.years_of_service;
+    if (req.body.private_comments !== undefined) updates.private_comments = req.body.private_comments;
+    if (req.body.liability_waiver_date !== undefined) updates.liability_waiver_date = req.body.liability_waiver_date;
   }
 
-  const updated = store.updateRequestorById(id, updates);
+  const updated = store.updateRequestorById(id, updates, {
+    allowAdminFields: current.Admin,
+    includePrivate: current.Admin,
+  });
   if (!updated) {
     return res.status(404).json({ error: 'Requestor not found.' });
   }
@@ -231,7 +242,7 @@ router.put('/requestor/:id', requireAuth, (req, res) => {
 
 router.put('/requestor/:id/requests', requireAuth, (req, res) => {
   const id = Number(req.params.id);
-  const current = store.getRequestorById(req.session.userId);
+  const current = store.getRequestorById(req.session.userId, { includePrivate: true });
   if (!current) {
     return res.status(404).json({ error: 'Session user not found.' });
   }
@@ -257,6 +268,41 @@ router.get('/request-summary', requireAuth, (req, res) => {
   const requestorsById = new Map(store.listRequestors().map((r) => [r.Requestor_ID, r]));
   const summary = summarizeByChoice(store.listRequests(), choiceNumber, excludeRequestorId, requestorsById);
   return res.json({ rows: summary });
+});
+
+router.get('/mode', requireAuth, (_req, res) => {
+  return res.json({ mode: store.getApplicationMode() });
+});
+
+router.put('/mode', requireAuth, requireAdmin, (req, res) => {
+  try {
+    const mode = store.setApplicationMode(String(req.body?.mode || ''));
+    return res.json({ mode });
+  } catch (err) {
+    return res.status(400).json({ error: err.message });
+  }
+});
+
+router.get('/work-parties', requireAuth, (req, res) => {
+  const year = Number(req.query.year || new Date().getFullYear());
+  const requestorId = req.query.requestorId ? Number(req.query.requestorId) : Number(req.session.userId);
+  const current = store.getRequestorById(req.session.userId, { includePrivate: true });
+  if (!current.Admin && requestorId !== current.Requestor_ID) {
+    return res.status(403).json({ error: 'Forbidden.' });
+  }
+  return res.json({ rows: store.listWorkParties(year, requestorId) });
+});
+
+router.put('/work-parties', requireAuth, (req, res) => {
+  const requestorId = req.body?.requestorId ? Number(req.body.requestorId) : Number(req.session.userId);
+  const current = store.getRequestorById(req.session.userId, { includePrivate: true });
+  if (!current.Admin && requestorId !== current.Requestor_ID) {
+    return res.status(403).json({ error: 'Forbidden.' });
+  }
+  const interests = Array.isArray(req.body?.interests) ? req.body.interests : [];
+  store.saveWorkPartyInterests(requestorId, interests);
+  const year = Number(req.body?.year || new Date().getFullYear());
+  return res.json({ ok: true, rows: store.listWorkParties(year, requestorId) });
 });
 
 router.post('/admin/upload-requestors', requireAuth, requireAdmin, upload.single('file'), (req, res) => {
@@ -309,6 +355,12 @@ router.post('/admin/upload-requestors', requireAuth, requireAdmin, upload.single
       login_code: cell(cells, 'login_code'),
       code_generated_when: cell(cells, 'code_generated_when') || cell(cells, 'Email_code_sent'),
       last_failed_login: cell(cells, 'last_failed_login'),
+      years_of_service: cell(cells, 'years_of_service') || cell(cells, 'years of service'),
+      has_a_chainsaw: toBoolean(cell(cells, 'has_a_chainsaw')),
+      chainsaw_user: toBoolean(cell(cells, 'chainsaw_user')),
+      other_skills: cell(cells, 'other_skills'),
+      private_comments: cell(cells, 'private_comments') || cell(cells, 'private comments'),
+      liability_waiver_date: cell(cells, 'liability_waiver_date'),
     });
     createdOrUpdated += 1;
   }
@@ -318,7 +370,7 @@ router.post('/admin/upload-requestors', requireAuth, requireAdmin, upload.single
 
 router.get('/admin/download/requestors', requireAuth, requireAdmin, (req, res) => {
   const filter = String(req.query.filter || 'all');
-  const requestors = store.listRequestors();
+  const requestors = store.listRequestors({ includePrivate: true });
   const requests = store.listRequests();
 
   const rows = requestors.filter((r) => {
@@ -340,14 +392,22 @@ router.get('/admin/download/requestors', requireAuth, requireAdmin, (req, res) =
     Requests_Assigned: requests.some((x) => x.Requestor_ID === r.Requestor_ID && ['confirmed', 'granted'].includes(x.Status)) ? 'TRUE' : 'FALSE',
   }));
 
-  const headers = [...REQUESTORS_HEADERS, 'Requests_Assigned'];
+  const headers = [
+    ...REQUESTORS_HEADERS,
+    'has_a_chainsaw',
+    'chainsaw_user',
+    'other_skills',
+    'private_comments',
+    'liability_waiver_date',
+    'Requests_Assigned',
+  ];
   res.setHeader('Content-Type', 'text/tab-separated-values; charset=utf-8');
   res.setHeader('Content-Disposition', 'attachment; filename="requestors.tsv"');
   return res.send(toTsv(headers, withRequests));
 });
 
 router.get('/admin/download/requests-joined', requireAuth, requireAdmin, (req, res) => {
-  const requestorsById = new Map(store.listRequestors().map((r) => [r.Requestor_ID, r]));
+  const requestorsById = new Map(store.listRequestors({ includePrivate: true }).map((r) => [r.Requestor_ID, r]));
   const filter = String(req.query.filter || 'all');
   const joined = requestsJoinedReport(store.listRequests(), requestorsById, { filter });
   const headers = [
@@ -368,6 +428,12 @@ router.get('/admin/download/requests-joined', requireAuth, requireAdmin, (req, r
     'Last_mod_date',
     'last_failed_login',
     'years_of_service',
+    'has_a_chainsaw',
+    'chainsaw_user',
+    'other_skills',
+    'private_comments',
+    'liability_waiver_date',
+    'Request_ID',
     'Benson',
     'Bradley',
     'Grubb',
@@ -385,6 +451,7 @@ router.get('/admin/download/requests-joined', requireAuth, requireAdmin, (req, r
     'Request_Last_mod_date',
     'hut_count_flexibility',
     'saturday_week_number',
+    'Combination_first_request',
   ];
 
   res.setHeader('Content-Type', 'text/tab-separated-values; charset=utf-8');
@@ -393,10 +460,11 @@ router.get('/admin/download/requests-joined', requireAuth, requireAdmin, (req, r
 });
 
 router.post('/admin/run-assignment', requireAuth, requireAdmin, (req, res) => {
-  const requestorsById = new Map(store.listRequestors().map((r) => [r.Requestor_ID, r]));
+  const requestorsById = new Map(store.listRequestors({ includePrivate: true }).map((r) => [r.Requestor_ID, r]));
   const seed = req.body?.seed;
-  runAssignment(store.requests, requestorsById, { seed });
-  store.markDirty();
+  const requests = store.listRequests();
+  runAssignment(requests, requestorsById, { seed });
+  store.saveRequests(requests);
   return res.json({ ok: true, message: 'Assignment completed.' });
 });
 

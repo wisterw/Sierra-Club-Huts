@@ -4,6 +4,7 @@ const PROJECT_ROOT = path.resolve(__dirname, '..');
 const DATA_DIR = path.join(PROJECT_ROOT, 'data');
 const REQUESTORS_FILE = path.join(DATA_DIR, 'requestors.tsv');
 const REQUESTS_FILE = path.join(DATA_DIR, 'requests.tsv');
+const DATABASE_FILE = process.env.DATABASE_FILE || path.join(DATA_DIR, 'huts.sqlite');
 const EMAIL_ERROR_LOG = path.join(DATA_DIR, 'email_errors.log');
 
 const HUTS = ['Benson', 'Bradley', 'Grubb', 'Ludlow'];
@@ -17,6 +18,7 @@ const HUT_CAPACITY = {
 module.exports = {
   PROJECT_ROOT,
   DATA_DIR,
+  DATABASE_FILE,
   REQUESTORS_FILE,
   REQUESTS_FILE,
   EMAIL_ERROR_LOG,
