@@ -32,6 +32,32 @@ function createRng(seed) {
   return mulberry32(stringToSeed(normalized));
 }
 
+function coerceLotteryValue(value) {
+  const num = Number(value);
+  return Number.isFinite(num) ? num : null;
+}
+
+function assignLotteryValues(requestorsById, options = {}) {
+  const rng = createRng(options.seed);
+  const regenerate = options.regenerate !== false;
+  const changed = [];
+
+  for (const requestor of requestorsById.values()) {
+    const current = coerceLotteryValue(requestor.Lottery_value ?? requestor.lottery_value);
+    if (regenerate || current === null) {
+      const next = rng();
+      requestor.Lottery_value = next;
+      requestor.lottery_value = next;
+      changed.push(requestor);
+    } else {
+      requestor.Lottery_value = current;
+      requestor.lottery_value = current;
+    }
+  }
+
+  return changed;
+}
+
 function isGranted(req) {
   return STATUS_GRANTED.has(req.Status);
 }
@@ -152,7 +178,10 @@ function findAssignment(req, occupancy) {
 }
 
 function runAssignment(requests, requestorsById, options = {}) {
-  const rng = createRng(options.seed);
+  const changedRequestors = assignLotteryValues(requestorsById, {
+    seed: options.seed,
+    regenerate: options.regenerateLotteryNumbers !== false,
+  });
   const now = new Date().toISOString();
   for (const req of requests) {
     normalizeStatus(req);
@@ -161,7 +190,7 @@ function runAssignment(requests, requestorsById, options = {}) {
     req.Spots_granted = Number(req.Spots_ideal || 0);
     req.Confirmed_How = '';
     req.Assignment_audit = '';
-    req.Lottery_value = Number(req.Lottery_value || 0);
+    req.Lottery_value = coerceLotteryValue(requestorsById.get(Number(req.Requestor_ID))?.Lottery_value) ?? null;
     req.hut_count_flexibility = hutsForRequest(req).length;
     req.saturday_week_number = closestSaturdayWeekKey(req.Arrival, req.Departure);
     req.Last_mod_date = now;
@@ -181,7 +210,6 @@ function runAssignment(requests, requestorsById, options = {}) {
     ));
 
     const scored = candidates.map((req) => {
-      req.Lottery_value = rng();
       const nights = requestNights(req).length;
       const minSpots = requestMinSpots(req);
       const impact = minSpots * nights;
@@ -191,6 +219,7 @@ function runAssignment(requests, requestorsById, options = {}) {
         credits: getCredits(req),
         impact,
         flex,
+        lottery: coerceLotteryValue(requestorsById.get(Number(req.Requestor_ID))?.Lottery_value) ?? Number.MAX_SAFE_INTEGER,
       };
     });
 
@@ -198,7 +227,8 @@ function runAssignment(requests, requestorsById, options = {}) {
       if (b.credits !== a.credits) return b.credits - a.credits;
       if (a.impact !== b.impact) return a.impact - b.impact;
       if (a.flex !== b.flex) return a.flex - b.flex;
-      return Number(a.req.Lottery_value || 0) - Number(b.req.Lottery_value || 0);
+      if (a.lottery !== b.lottery) return a.lottery - b.lottery;
+      return Number(a.req.Requestor_ID || 0) - Number(b.req.Requestor_ID || 0);
     });
 
     for (const row of scored) {
@@ -224,6 +254,8 @@ function runAssignment(requests, requestorsById, options = {}) {
       req.Last_mod_date = new Date().toISOString();
     }
   }
+
+  return { requestorsToPersist: changedRequestors };
 }
 
 function efficiencyReport(requests) {
@@ -310,7 +342,13 @@ function requestsJoinedReport(requests, requestorsById, options = {}) {
         Creation_date: requestor.Creation_date || '',
         Last_mod_date: requestor.Last_mod_date || '',
         last_failed_login: requestor.last_failed_login || '',
-        years_of_service: Number(requestor.years_of_service || 0),
+        years_of_service: requestor.years_of_service || '',
+        has_a_chainsaw: requestor.has_a_chainsaw ? 'TRUE' : 'FALSE',
+        chainsaw_user: requestor.chainsaw_user ? 'TRUE' : 'FALSE',
+        other_skills: requestor.other_skills || '',
+        private_comments: requestor.private_comments || '',
+        liability_waiver_date: requestor.liability_waiver_date || '',
+        Request_ID: '',
         Benson: '',
         Bradley: '',
         Grubb: '',
@@ -328,6 +366,7 @@ function requestsJoinedReport(requests, requestorsById, options = {}) {
         Request_Last_mod_date: '',
         hut_count_flexibility: '',
         saturday_week_number: '',
+        Combination_first_request: '',
       });
       continue;
     }
@@ -359,7 +398,13 @@ function requestsJoinedReport(requests, requestorsById, options = {}) {
         Creation_date: requestor.Creation_date || '',
         Last_mod_date: requestor.Last_mod_date || '',
         last_failed_login: requestor.last_failed_login || '',
-        years_of_service: Number(requestor.years_of_service || 0),
+        years_of_service: requestor.years_of_service || '',
+        has_a_chainsaw: requestor.has_a_chainsaw ? 'TRUE' : 'FALSE',
+        chainsaw_user: requestor.chainsaw_user ? 'TRUE' : 'FALSE',
+        other_skills: requestor.other_skills || '',
+        private_comments: requestor.private_comments || '',
+        liability_waiver_date: requestor.liability_waiver_date || '',
+        Request_ID: Number(req.Request_ID || 0),
         Benson: req.Benson ? 'TRUE' : 'FALSE',
         Bradley: req.Bradley ? 'TRUE' : 'FALSE',
         Grubb: req.Grubb ? 'TRUE' : 'FALSE',
@@ -377,6 +422,7 @@ function requestsJoinedReport(requests, requestorsById, options = {}) {
         Request_Last_mod_date: req.Last_mod_date || '',
         hut_count_flexibility: Number(req.hut_count_flexibility || hutsCount || 0),
         saturday_week_number: req.saturday_week_number || closestSaturdayWeekKey(req.Arrival, req.Departure),
+        Combination_first_request: req.Combination_first_request || '',
       });
     }
   }
@@ -397,6 +443,7 @@ function requestsJoinedReport(requests, requestorsById, options = {}) {
 
 module.exports = {
   runAssignment,
+  assignLotteryValues,
   efficiencyReport,
   requestsJoinedReport,
 };

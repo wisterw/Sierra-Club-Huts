@@ -155,7 +155,9 @@ The application mode should be stored in a database table and have an admin serv
 Upload a tab-delimited file.  This will create new records where a requestor’s email does not exist already, and update records where the email is already present.  
 
 ## Run assignment algorithm
-(as described below in this document)
+This task exposes a checkbox which is defaulted to true, which is to "regenerate lottery numbers".  The value of this checkbox should be passed with the request to run the assignment algorithm.  The admin surface also exposes a separate action to regenerate lottery numbers before running assignment.
+
+The lottery number used for assignment is stored on the requestor record, and assignment uses the lowest lottery number as the final tiebreak after all other ranking criteria are applied.  If regeneration is disabled, existing non-null lottery numbers are preserved.
 
 ## Download requests
 This action provides an administrator a look at the full data set, with requests and requestors joined together.  Include the following fields:
@@ -170,13 +172,14 @@ This action provides an administrator a look at the full data set, with requests
    * zip
    * Phone
    * Comments 
-   * Credits
-   * code_generated_when 
-   * Admin (boolean)
-   * Creation\_date 
-   * Last\_mod\_date
-   * last\_failed\_login
-   * years_of_service
+ * Credits
+ * code_generated_when 
+ * Admin (boolean)
+ * Creation\_date 
+ * Last\_mod\_date
+ * last\_failed\_login
+ * years_of_service
+ * lottery_value
  * From requests:
    * Benson
    * Bradley

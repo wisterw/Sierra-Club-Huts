@@ -34,12 +34,14 @@
 
       <main id="main-app" class="hidden">
         <nav class="tabs">
-          <button data-tab="requests" class="active">Requests</button>
+          <button data-tab="work-party" id="work-party-tab-btn">Work Party</button>
+          <button data-tab="trip-request" class="active">Trip Request</button>
           <button data-tab="profile">Profile</button>
           <button data-tab="admin" id="admin-tab-btn" class="hidden">Admin</button>
         </nav>
 
-        <section id="tab-requests" class="tab-content panel"></section>
+        <section id="tab-work-party" class="tab-content panel hidden"></section>
+        <section id="tab-trip-request" class="tab-content panel"></section>
         <section id="tab-profile" class="tab-content panel hidden"></section>
         <section id="tab-admin" class="tab-content panel hidden"></section>
       </main>

@@ -6,7 +6,11 @@
   "scripts": {
     "start": "node src/server.js",
     "dev": "node --watch src/server.js",
-    "test:summary": "node scripts/requestSummaryTest.js"
+    "test:summary": "node scripts/requestSummaryTest.js",
+    "test:migration": "node scripts/sqliteMigrationTest.js",
+    "test:mode": "node scripts/appModeTest.js",
+    "test:assignment-status": "node scripts/assignmentStatusTest.js",
+    "test:assignment-lottery-flag": "node scripts/assignmentLotteryFlagTest.js"
   },
   "dependencies": {
     "express": "^4.22.1",

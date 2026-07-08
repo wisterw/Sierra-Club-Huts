@@ -24,6 +24,7 @@ We will use a lightweight relational database for our persistence store.  The ta
 * other_skills (250-character text field).  Other skills that the user wants to highlight.
 * private comments (250-character text field).  Comments that work party leaders can leave about a volunteer, not to be seen by that volunteer.
 * liability_waiver_date (datetime).  When was the most recent and properly executed liability waiver received for this volunteer.
+* lottery_value (integer, nullable).  Random number assigned to this requestor which may be used as a tie-breaker.  This is assigned separately from the assignment algorithm, may remain empty until first regeneration, and does not change the requestor's identity or other profile fields.
 
 ### Work Parties
 This table can grow year over year so that we record all the work parties hosted over time.
@@ -60,7 +61,6 @@ This is a table to capture the intersection of work parties and requestors.  Thi
   * Hut\_granted.  Which hut was selected of the options.  
   * Spots\_granted.  Spots that were available for confirmed requests.  
   * Status. (string).  requested, granted, lost-lottery, not-used.  Default is "requested".  (Legacy values pending/confirmed should be treated as requested/granted.)
-  * Lottery_value.  random # generated for the assignment lottery.  
   * Creation\_date. (datetime).  When was the request created.  
   * Last\_mod\_date. (datetime).  When was this request last edited.
   * hut_count_flexibility (integer).  How many huts the request is open to.  This is a calculated field, based on the # of huts marked TRUE.

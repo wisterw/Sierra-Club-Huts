@@ -48,5 +48,10 @@ The goal of the assignment algorithm is to fulfill hut requests according to our
 5. By work credits this year (more first)
 6. The reservation they paid for last year was closest in percentage terms to the reservation they requested last year (higher percentage first)
 7. By years of recent service (more first)
-8. By alphabetical order of email address (earliest first).  For repeatable results from test data.
-AssignTrips shall also log for each request granted which step in the above preference list it got to in the assignment algorithm.
+8. By lottery number (lowest first).  This will serve as a tie-break and also provide repeatable results from test data.  Lottery numbers are set at random from the admin page in a separate action from the assignment algorithm.
+
+ * AssignTrips shall also log for each request granted which step in the above preference list it got to in the assignment algorithm.
+
+ * AssignTrips is an endpoint for assigning trips to requestors.  There is an optional flag which can assign a random lottery number to each requestor prior to the assignment algorithm running.  This flag defaults to true, meaning new lottery numbers will be assigned to all requestors.  But the flag can also be false, meaning only requestors without lottery numbers will receive new lottery numbers, and existing requestors will keep their same lottery numbers.
+ * Lottery numbers are stored on requestors and the lowest lottery number wins as the final tiebreak after all earlier criteria are applied.
+ * The admin interface also exposes a separate lottery regeneration action for requestors before assignment runs.

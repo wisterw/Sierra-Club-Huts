@@ -10,7 +10,9 @@ const HUT_CAPACITY = {
 
 const state = {
   me: null,
+  mode: 'inactive',
   choices: [],
+  workParties: [],
   selectedChoiceIndex: 0,
   summaryRows: [],
 };
@@ -24,10 +26,13 @@ const el = {
   loginError: document.getElementById('login-error'),
   mainApp: document.getElementById('main-app'),
   sessionInfo: document.getElementById('session-info'),
+  tabWorkParty: document.getElementById('tab-work-party'),
   tabProfile: document.getElementById('tab-profile'),
-  tabRequests: document.getElementById('tab-requests'),
+  tabRequests: document.getElementById('tab-trip-request'),
   tabAdmin: document.getElementById('tab-admin'),
   adminTabBtn: document.getElementById('admin-tab-btn'),
+  workPartyTabBtn: document.getElementById('work-party-tab-btn'),
+  tripTabBtn: document.querySelector('.tabs button[data-tab="trip-request"]'),
   requestCardTpl: document.getElementById('request-card-template'),
 };
 
@@ -72,6 +77,7 @@ function defaultChoice() {
     arrival: '',
     departure: '',
     traverseDate: '',
+    requestIds: [],
     choiceNumber: state.choices.length + 1,
     spotsIdeal: 1,
     spotsMin: 1,
@@ -89,6 +95,7 @@ function normalizeChoice(choice, idx) {
     arrival: choice.arrival || '',
     departure: choice.departure || '',
     traverseDate: choice.traverseDate || '',
+    requestIds: Array.isArray(choice.requestIds) ? choice.requestIds : [],
     choiceNumber: Number(choice.choiceNumber || idx + 1),
     spotsIdeal: Number(choice.spotsIdeal || 1),
     spotsMin: Number(choice.spotsMin || choice.spotsIdeal || 1),
@@ -156,6 +163,7 @@ function mapRequestsToChoices(rawRequests) {
           arrival: comboArrival || base.Arrival,
           departure: comboDeparture || base.Departure,
           traverseDate: comboTraverse || '',
+          requestIds: rows.map((r) => r.Request_ID).filter(Boolean),
           choiceNumber,
           spotsIdeal: base.Spots_ideal,
           spotsMin: base.Spots_min,
@@ -195,9 +203,12 @@ function expandChoice(choice) {
     }
     for (const comboMode of comboModes) {
       const [first, second] = comboMode.split('->');
+      const [firstId, secondId] = Array.isArray(choice.requestIds) ? choice.requestIds : [];
       out.push(
         {
           ...shared,
+          Request_ID: firstId || undefined,
+          Client_combo_group: `${choice.choiceNumber}:${comboMode}`,
           Benson: first === 'Benson',
           Bradley: first === 'Bradley',
           Grubb: false,
@@ -207,6 +218,8 @@ function expandChoice(choice) {
         },
         {
           ...shared,
+          Request_ID: secondId || undefined,
+          Client_combo_group: `${choice.choiceNumber}:${comboMode}`,
           Benson: second === 'Benson',
           Bradley: second === 'Bradley',
           Grubb: false,
@@ -219,8 +232,10 @@ function expandChoice(choice) {
   }
 
   if (simpleHuts.length > 0) {
+    const [onlyId] = Array.isArray(choice.requestIds) ? choice.requestIds : [];
     out.push({
       ...shared,
+      Request_ID: onlyId || undefined,
       Benson: simpleHuts.includes('Benson'),
       Bradley: simpleHuts.includes('Bradley'),
       Grubb: simpleHuts.includes('Grubb'),
@@ -292,14 +307,37 @@ function setTab(tabName) {
   for (const btn of document.querySelectorAll('.tabs button')) {
     btn.classList.toggle('active', btn.dataset.tab === tabName);
   }
+  el.tabWorkParty.classList.toggle('hidden', tabName !== 'work-party');
   el.tabProfile.classList.toggle('hidden', tabName !== 'profile');
-  el.tabRequests.classList.toggle('hidden', tabName !== 'requests');
+  el.tabRequests.classList.toggle('hidden', tabName !== 'trip-request');
   el.tabAdmin.classList.toggle('hidden', tabName !== 'admin');
 }
 
 function wireTabs() {
   for (const btn of document.querySelectorAll('.tabs button')) {
     btn.addEventListener('click', () => setTab(btn.dataset.tab));
+  }
+}
+
+function applyModeUi() {
+  const tripDisabled = state.mode === 'work-party' || state.mode === 'inactive';
+  const workDisabled = state.mode === 'trip-request' || state.mode === 'inactive';
+  el.workPartyTabBtn.disabled = workDisabled;
+  el.workPartyTabBtn.title = workDisabled
+    ? 'Work party selection has not opened or is already completed'
+    : '';
+  if (el.tripTabBtn) {
+    el.tripTabBtn.disabled = tripDisabled;
+    el.tripTabBtn.title = tripDisabled
+      ? 'Ski hut trip request has not opened or is already completed'
+      : '';
+  }
+  if (state.mode === 'work-party') {
+    setTab('work-party');
+  } else if (state.mode === 'trip-request') {
+    setTab('trip-request');
+  } else {
+    setTab('profile');
   }
 }
 
@@ -334,6 +372,9 @@ function renderProfile() {
       <label>ZIP<input name="zip" value="${state.me.zip || ''}" /></label>
       <label>Phone<input name="Phone" value="${state.me.Phone || ''}" /></label>
       <label>Comments<textarea name="Comments">${state.me.Comments || ''}</textarea></label>
+      <label class="checkbox-option"><input type="checkbox" name="has_a_chainsaw" ${state.me.has_a_chainsaw ? 'checked' : ''} /> <span>I am an experienced chainsaw user</span></label>
+      <label class="checkbox-option"><input type="checkbox" name="chainsaw_user" ${state.me.chainsaw_user ? 'checked' : ''} /> <span>I own a chainsaw and know how to tune it</span></label>
+      <label>Other skills<textarea name="other_skills">${state.me.other_skills || ''}</textarea></label>
       <label>Admin
         <select name="Admin" ${isAdmin ? '' : 'disabled'}>
           <option value="false" ${state.me.Admin ? '' : 'selected'}>False</option>
@@ -341,6 +382,8 @@ function renderProfile() {
         </select>
       </label>
       <label>Credits<input type="number" name="Credits" ${isAdmin ? '' : 'disabled'} value="${state.me.Credits}" /></label>
+      <label>Private comments<textarea name="private_comments" ${isAdmin ? '' : 'disabled'}>${state.me.private_comments || ''}</textarea></label>
+      <label>Liability waiver date<input type="date" name="liability_waiver_date" ${isAdmin ? '' : 'disabled'} value="${state.me.liability_waiver_date || ''}" /></label>
       <button type="submit">Save Profile</button>
       <div id="profile-msg"></div>
     </form>
@@ -358,10 +401,15 @@ function renderProfile() {
       zip: fd.get('zip'),
       Phone: fd.get('Phone'),
       Comments: fd.get('Comments'),
+      has_a_chainsaw: fd.get('has_a_chainsaw') === 'on',
+      chainsaw_user: fd.get('chainsaw_user') === 'on',
+      other_skills: fd.get('other_skills'),
     };
     if (isAdmin) {
       payload.Admin = fd.get('Admin') === 'true';
       payload.Credits = Number(fd.get('Credits'));
+      payload.private_comments = fd.get('private_comments');
+      payload.liability_waiver_date = fd.get('liability_waiver_date');
     }
 
     const updated = await api(`/requestor/${state.me.Requestor_ID}`, { method: 'PUT', body: payload });
@@ -617,6 +665,63 @@ async function saveRequests() {
   state.me = me;
 }
 
+async function loadWorkParties() {
+  const year = new Date().getFullYear();
+  const data = await api(`/work-parties?year=${year}&requestorId=${state.me.Requestor_ID}`);
+  state.workParties = data.rows || [];
+}
+
+function renderWorkParty() {
+  if (!state.me) return;
+  const cards = state.workParties.map((row, idx) => {
+    const interest = row.Interest || 'no thank you';
+    return `
+      <article class="request-card ${idx === 0 ? 'active' : ''}">
+        <div class="request-summary">
+          ${row.Friday_check_in || ''} ${row.Hut || ''} · ${row.Leader || ''}
+        </div>
+        <div class="request-details">
+          <div>${row.Party_comments || ''}</div>
+          <div>Status: ${row.Availability || 'open'} · ${row.Confirmation_status || 'not coming'}</div>
+          <fieldset>
+            <legend>Interest</legend>
+            <label class="checkbox-option"><input type="radio" name="interest-${idx}" value="no thank you" ${interest === 'no thank you' ? 'checked' : ''} /> <span>No thank you</span></label>
+            <label class="checkbox-option"><input type="radio" name="interest-${idx}" value="only if you need me" ${interest === 'only if you need me' ? 'checked' : ''} /> <span>Only if you need me</span></label>
+            <label class="checkbox-option"><input type="radio" name="interest-${idx}" value="please consider me" ${interest === 'please consider me' ? 'checked' : ''} /> <span>Please consider me</span></label>
+          </fieldset>
+        </div>
+      </article>
+    `;
+  }).join('');
+
+  el.tabWorkParty.innerHTML = `
+    <h2>Work Party</h2>
+    <div class="inline-actions">
+      <button id="save-work-parties">Save</button>
+    </div>
+    <div id="work-party-msg"></div>
+    <div class="request-list">${cards || '<p>No work parties found for the current year.</p>'}</div>
+  `;
+
+  document.getElementById('save-work-parties').addEventListener('click', async () => {
+    const interests = state.workParties.map((row, idx) => {
+      const checked = el.tabWorkParty.querySelector(`input[name="interest-${idx}"]:checked`);
+      return {
+        Friday_check_in: row.Friday_check_in,
+        Hut: row.Hut,
+        Interest: checked ? checked.value : 'no thank you',
+      };
+    });
+    const data = await api('/work-parties', {
+      method: 'PUT',
+      body: { requestorId: state.me.Requestor_ID, year: new Date().getFullYear(), interests },
+    });
+    state.workParties = data.rows || [];
+    document.getElementById('work-party-msg').textContent = 'Saved.';
+    renderWorkParty();
+  });
+}
+
 async function renderRequests() {
   if (!state.me) return;
   const choice = state.choices[state.selectedChoiceIndex] || state.choices[0];
@@ -625,7 +730,7 @@ async function renderRequests() {
   }
 
   el.tabRequests.innerHTML = `
-    <h2>Requests</h2>
+    <h2>Trip Request</h2>
     <div class="inline-actions">
       <button id="add-choice">Add Choice</button>
       <button id="save-all">Save All</button>
@@ -677,6 +782,12 @@ async function renderRequests() {
   }
 }
 
+async function loadMode() {
+  const data = await api('/mode');
+  state.mode = data.mode || 'inactive';
+  applyModeUi();
+}
+
 function download(url) {
   window.open(url, '_blank', 'noopener');
 }
@@ -691,6 +802,20 @@ async function renderAdmin() {
     <h2>Admin</h2>
     <div class="kpi-grid">
       <div class="kpi-card">
+        <h3>Application Mode</h3>
+        <label>Mode
+          <select id="app-mode">
+            <option value="work-party" ${state.mode === 'work-party' ? 'selected' : ''}>Work Party mode</option>
+            <option value="trip-request" ${state.mode === 'trip-request' ? 'selected' : ''}>Trip Request mode</option>
+            <option value="inactive" ${state.mode === 'inactive' ? 'selected' : ''}>Inactive mode</option>
+          </select>
+        </label>
+        <div class="inline-actions">
+          <button id="save-mode">Save mode</button>
+        </div>
+        <div id="mode-msg"></div>
+      </div>
+      <div class="kpi-card">
         <h3>Upload Requestors TSV</h3>
         <form id="upload-form">
           <input type="file" name="file" accept=".tsv,text/tab-separated-values" required />
@@ -700,10 +825,13 @@ async function renderAdmin() {
       </div>
       <div class="kpi-card">
         <h3>Run Assignment</h3>
+        <label class="checkbox-option"><input id="regenerate-lottery" type="checkbox" checked /> <span>Regenerate lottery numbers</span></label>
         <div class="inline-actions">
           <button id="run-assignment">Run assignment</button>
+          <button id="regenerate-lottery-btn">Regenerate lottery numbers</button>
         </div>
         <div id="assign-msg"></div>
+        <div id="lottery-msg"></div>
       </div>
       <div class="kpi-card">
         <h3>Download Requests</h3>
@@ -726,6 +854,14 @@ async function renderAdmin() {
     </div>
   `;
 
+  document.getElementById('save-mode').addEventListener('click', async () => {
+    const mode = document.getElementById('app-mode').value;
+    const data = await api('/mode', { method: 'PUT', body: { mode } });
+    state.mode = data.mode;
+    document.getElementById('mode-msg').textContent = 'Saved.';
+    applyModeUi();
+  });
+
   document.getElementById('upload-form').addEventListener('submit', async (e) => {
     e.preventDefault();
     const formData = new FormData(e.currentTarget);
@@ -740,17 +876,26 @@ async function renderAdmin() {
     download(`/api/admin/download/requests-joined?filter=${filter}`);
   });
 
+  const regenerateLottery = document.getElementById('regenerate-lottery');
   document.getElementById('run-assignment').addEventListener('click', async () => {
-    const data = await api('/admin/run-assignment', { method: 'POST', body: {} });
+    const data = await api('/admin/run-assignment', {
+      method: 'POST',
+      body: { regenerateLotteryNumbers: regenerateLottery.checked },
+    });
     document.getElementById('assign-msg').textContent = data.message;
+  });
+
+  document.getElementById('regenerate-lottery-btn').addEventListener('click', async () => {
+    const data = await api('/admin/regenerate-lottery', { method: 'POST', body: {} });
+    document.getElementById('lottery-msg').textContent = data.message;
   });
 
   document.getElementById('load-efficiency').addEventListener('click', async () => {
     const data = await api('/admin/efficiency-report');
     const rows = data.rows || [];
     document.getElementById('eff-table').innerHTML = rows.length
-      ? `<table class="availability"><thead><tr><th>Choice</th><th>% Groups</th><th>% Spots</th></tr></thead><tbody>${rows
-          .map((r) => `<tr><td>${r.choice}</td><td>${r.groupsPercent}</td><td>${r.spotsPercent}</td></tr>`)
+      ? `<table class="availability"><thead><tr><th>Outcome</th><th>% Groups</th><th>% Spots</th></tr></thead><tbody>${rows
+          .map((r) => `<tr><td>${r.outcome || r.choice}</td><td>${r.groupsPercent}</td><td>${r.spotsPercent}</td></tr>`)
           .join('')}</tbody></table>`
       : '<p>No granted assignments yet.</p>';
   });
@@ -768,6 +913,9 @@ async function loadMeAndRender() {
   el.adminTabBtn.classList.toggle('hidden', !me.Admin);
 
   renderSession();
+  await loadMode();
+  await loadWorkParties().catch(() => { state.workParties = []; });
+  renderWorkParty();
   await renderRequests();
   renderProfile();
   await renderAdmin();

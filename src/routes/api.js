@@ -13,7 +13,7 @@ const {
   toFourDigitCode,
 } = require('../services/auth');
 const { validateRequest, summarizeByChoice } = require('../services/requestLogic');
-const { runAssignment, efficiencyReport, requestsJoinedReport } = require('../services/assignment');
+const { assignLotteryValues, runAssignment, efficiencyReport, requestsJoinedReport } = require('../services/assignment');
 
 const upload = multer();
 const router = express.Router();
@@ -54,11 +54,17 @@ function requireAdmin(req, res, next) {
 }
 
 function requestorPayload(requestor, options = {}) {
-  return {
+  const payload = {
     ...requestor,
     requests: store.getRequestsByRequestorId(requestor.Requestor_ID),
     applicationMode: store.getApplicationMode(),
   };
+  if (options.includePrivate) {
+    return payload;
+  }
+  delete payload.private_comments;
+  delete payload.liability_waiver_date;
+  return payload;
 }
 
 router.post('/send-email', async (req, res) => {
@@ -173,11 +179,11 @@ router.post('/logout', (req, res) => {
 });
 
 router.get('/me', requireAuth, (req, res) => {
-  const requestor = store.getRequestorById(req.session.userId);
+  const requestor = store.getRequestorById(req.session.userId, { includePrivate: true });
   if (!requestor) {
     return res.status(404).json({ error: 'Requestor not found.' });
   }
-  return res.json(requestorPayload(requestor));
+  return res.json(requestorPayload(requestor, { includePrivate: Boolean(requestor.Admin) }));
 });
 
 router.get('/requestor/:id', requireAuth, (req, res) => {
@@ -195,7 +201,7 @@ router.get('/requestor/:id', requireAuth, (req, res) => {
     return res.status(404).json({ error: 'Requestor not found.' });
   }
 
-  return res.json(requestorPayload(target));
+  return res.json(requestorPayload(target, { includePrivate: current.Admin }));
 });
 
 router.put('/requestor/:id', requireAuth, (req, res) => {
@@ -394,6 +400,7 @@ router.get('/admin/download/requestors', requireAuth, requireAdmin, (req, res) =
 
   const headers = [
     ...REQUESTORS_HEADERS,
+    'Lottery_value',
     'has_a_chainsaw',
     'chainsaw_user',
     'other_skills',
@@ -462,10 +469,21 @@ router.get('/admin/download/requests-joined', requireAuth, requireAdmin, (req, r
 router.post('/admin/run-assignment', requireAuth, requireAdmin, (req, res) => {
   const requestorsById = new Map(store.listRequestors({ includePrivate: true }).map((r) => [r.Requestor_ID, r]));
   const seed = req.body?.seed;
+  const regenerateLotteryNumbers = req.body?.regenerateLotteryNumbers !== false;
   const requests = store.listRequests();
-  runAssignment(requests, requestorsById, { seed });
+  const result = runAssignment(requests, requestorsById, { seed, regenerateLotteryNumbers });
   store.saveRequests(requests);
+  if (result?.requestorsToPersist?.length) {
+    store.saveRequestorLotteryValues(result.requestorsToPersist);
+  }
   return res.json({ ok: true, message: 'Assignment completed.' });
+});
+
+router.post('/admin/regenerate-lottery', requireAuth, requireAdmin, (req, res) => {
+  const requestorsById = new Map(store.listRequestors({ includePrivate: true }).map((r) => [r.Requestor_ID, r]));
+  const changedRequestors = assignLotteryValues(requestorsById, { seed: req.body?.seed, regenerate: true });
+  store.saveRequestorLotteryValues(changedRequestors);
+  return res.json({ ok: true, message: 'Lottery numbers regenerated.' });
 });
 
 router.get('/admin/efficiency-report', requireAuth, requireAdmin, (req, res) => {

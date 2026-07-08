@@ -46,7 +46,10 @@ function assertHeaders(actual, expected, filePath) {
 
 function rowToRequestor(row) {
   if (!row) return null;
-  return {
+  const lotteryValue = row.lottery_value === null || row.lottery_value === undefined || row.lottery_value === ''
+    ? null
+    : Number(row.lottery_value);
+  const requestor = {
     Requestor_ID: Number(row.requestor_id),
     Email: row.email || '',
     first_name: row.first_name || '',
@@ -65,17 +68,40 @@ function rowToRequestor(row) {
     Last_mod_date: row.last_mod_date || '',
     last_failed_login: row.last_failed_login || '',
     years_of_service: row.years_of_service || '',
+    Lottery_value: lotteryValue,
     has_a_chainsaw: fromIntBool(row.has_a_chainsaw),
     chainsaw_user: fromIntBool(row.chainsaw_user),
     other_skills: row.other_skills || '',
     private_comments: row.private_comments || '',
     liability_waiver_date: row.liability_waiver_date || '',
   };
+  return {
+    ...requestor,
+    requestor_id: requestor.Requestor_ID,
+    email: requestor.Email,
+    phone: requestor.Phone,
+    comments: requestor.Comments,
+    credits: requestor.Credits,
+    login_code: requestor.login_code,
+    code_generated_when: requestor.code_generated_when,
+    admin: requestor.Admin,
+    creation_date: requestor.Creation_date,
+    last_mod_date: requestor.Last_mod_date,
+    last_failed_login: requestor.last_failed_login,
+    years_of_service: requestor.years_of_service,
+    Lottery_value: requestor.Lottery_value,
+    lottery_value: requestor.Lottery_value,
+    has_a_chainsaw: requestor.has_a_chainsaw,
+    chainsaw_user: requestor.chainsaw_user,
+    other_skills: requestor.other_skills,
+    private_comments: requestor.private_comments,
+    liability_waiver_date: requestor.liability_waiver_date,
+  };
 }
 
 function rowToTripRequest(row) {
   if (!row) return null;
-  return {
+  const request = {
     Request_ID: Number(row.request_id),
     Requestor_ID: Number(row.requestor_id),
     Benson: fromIntBool(row.benson),
@@ -98,6 +124,30 @@ function rowToTripRequest(row) {
     hut_count_flexibility: Number(row.hut_count_flexibility || 0),
     saturday_week_number: row.saturday_week_number || '',
     Combination_first_request: row.combination_first_request ? Number(row.combination_first_request) : null,
+  };
+  return {
+    ...request,
+    request_id: request.Request_ID,
+    requestor_id: request.Requestor_ID,
+    benson: request.Benson,
+    bradley: request.Bradley,
+    grubb: request.Grubb,
+    ludlow: request.Ludlow,
+    arrival: request.Arrival,
+    departure: request.Departure,
+    choice_number: request.Choice_Number,
+    spots_ideal: request.Spots_ideal,
+    spots_min: request.Spots_min,
+    hut_granted: request.Hut_granted,
+    spots_granted: request.Spots_granted,
+    status: request.Status,
+    lottery_value: request.Lottery_value,
+    assignment_audit: request.Assignment_audit,
+    creation_date: request.Creation_date,
+    last_mod_date: request.Last_mod_date,
+    hut_count_flexibility: request.hut_count_flexibility,
+    saturday_week_number: request.saturday_week_number,
+    combination_first_request: request.Combination_first_request,
   };
 }
 
@@ -122,6 +172,7 @@ class SqliteStore {
     this.db = new DatabaseSync(this.dbPath);
     this.db.exec('PRAGMA foreign_keys = ON');
     this.initSchema();
+    this.ensureRequestorLotteryColumn();
     this.seedDefaults();
     if (options.importTsv !== false) {
       this.importTsvIfEmpty({
@@ -156,6 +207,7 @@ class SqliteStore {
         last_mod_date TEXT,
         last_failed_login TEXT,
         years_of_service TEXT DEFAULT '',
+        lottery_value REAL,
         has_a_chainsaw INTEGER NOT NULL DEFAULT 0,
         chainsaw_user INTEGER NOT NULL DEFAULT 0,
         other_skills TEXT DEFAULT '',
@@ -217,9 +269,28 @@ class SqliteStore {
     `);
   }
 
+  ensureRequestorLotteryColumn() {
+    const columns = this.db.prepare('PRAGMA table_info(requestors)').all().map((row) => row.name);
+    if (!columns.includes('lottery_value')) {
+      this.db.exec('ALTER TABLE requestors ADD COLUMN lottery_value REAL');
+    }
+  }
+
   seedDefaults() {
     const stmt = this.db.prepare('INSERT OR IGNORE INTO settings (key, value) VALUES (?, ?)');
     stmt.run('application_mode', 'inactive');
+  }
+
+  runTransaction(fn) {
+    this.db.exec('BEGIN');
+    try {
+      const result = fn();
+      this.db.exec('COMMIT');
+      return result;
+    } catch (err) {
+      this.db.exec('ROLLBACK');
+      throw err;
+    }
   }
 
   importTsvIfEmpty({ requestorsFile, requestsFile }) {
@@ -241,8 +312,8 @@ class SqliteStore {
       INSERT OR REPLACE INTO requestors (
         requestor_id, email, first_name, last_name, address, city, state, zip,
         phone, comments, credits, login_code, code_generated_when, admin,
-        creation_date, last_mod_date, last_failed_login, years_of_service
-      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+        creation_date, last_mod_date, last_failed_login, years_of_service, lottery_value
+      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
     `);
 
     const insertRequest = this.db.prepare(`
@@ -254,7 +325,7 @@ class SqliteStore {
       ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
     `);
 
-    const tx = this.db.transaction(() => {
+    this.runTransaction(() => {
       for (const r of requestorsParsed.rows) {
         insertRequestor.run(
           Number(r.Requestor_ID),
@@ -274,7 +345,8 @@ class SqliteStore {
           r.Creation_date || '',
           r.Last_mod_date || '',
           r.last_failed_login || '',
-          r.years_of_service || r['years of service'] || ''
+          r.years_of_service || r['years of service'] || '',
+          r.lottery_value ?? r.Lottery_value ?? null
         );
       }
 
@@ -303,7 +375,6 @@ class SqliteStore {
         );
       }
     });
-    tx();
   }
 
   listRequestors(options = {}) {
@@ -339,8 +410,8 @@ class SqliteStore {
         requestor_id, email, first_name, last_name, address, city, state, zip,
         phone, comments, credits, login_code, code_generated_when, admin,
         creation_date, last_mod_date, last_failed_login, years_of_service,
-        has_a_chainsaw, chainsaw_user, other_skills, private_comments, liability_waiver_date
-      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+        lottery_value, has_a_chainsaw, chainsaw_user, other_skills, private_comments, liability_waiver_date
+      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
       ON CONFLICT(email) DO UPDATE SET
         first_name = excluded.first_name,
         last_name = excluded.last_name,
@@ -357,6 +428,7 @@ class SqliteStore {
         last_mod_date = excluded.last_mod_date,
         last_failed_login = excluded.last_failed_login,
         years_of_service = excluded.years_of_service,
+        lottery_value = excluded.lottery_value,
         has_a_chainsaw = excluded.has_a_chainsaw,
         chainsaw_user = excluded.chainsaw_user,
         other_skills = excluded.other_skills,
@@ -381,6 +453,7 @@ class SqliteStore {
       now,
       partial.last_failed_login ?? existing?.last_failed_login ?? '',
       partial.years_of_service ?? existing?.years_of_service ?? '',
+      partial.lottery_value ?? partial.Lottery_value ?? existing?.Lottery_value ?? null,
       intBool(partial.has_a_chainsaw ?? existing?.has_a_chainsaw ?? false),
       intBool(partial.chainsaw_user ?? existing?.chainsaw_user ?? false),
       partial.other_skills ?? existing?.other_skills ?? '',
@@ -438,6 +511,25 @@ class SqliteStore {
     return this.getRequestorById(id, { includePrivate: true });
   }
 
+  saveRequestorLotteryValues(requestors = []) {
+    const update = this.db.prepare(`
+      UPDATE requestors
+      SET lottery_value = ?, last_mod_date = ?
+      WHERE requestor_id = ?
+    `);
+    this.runTransaction(() => {
+      for (const requestor of requestors) {
+        update.run(
+          requestor.Lottery_value === null || requestor.Lottery_value === undefined || requestor.Lottery_value === ''
+            ? null
+            : Number(requestor.Lottery_value),
+          nowIso(),
+          Number(requestor.Requestor_ID)
+        );
+      }
+    });
+  }
+
   listRequests() {
     return this.db.prepare('SELECT * FROM ski_trip_requests ORDER BY choice_number, arrival, request_id')
       .all()
@@ -467,7 +559,7 @@ class SqliteStore {
         hut_count_flexibility, saturday_week_number, combination_first_request
       ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
     `);
-    const tx = this.db.transaction(() => {
+    this.runTransaction(() => {
       this.db.prepare('DELETE FROM ski_trip_requests WHERE requestor_id = ?').run(rid);
       const saved = [];
       for (const input of requests) {
@@ -516,7 +608,6 @@ class SqliteStore {
         }
       }
     });
-    tx();
   }
 
   saveRequests(requests) {
@@ -527,7 +618,7 @@ class SqliteStore {
         saturday_week_number = ?
       WHERE request_id = ?
     `);
-    const tx = this.db.transaction(() => {
+    this.runTransaction(() => {
       for (const req of requests) {
         update.run(
           req.Hut_granted || '',
@@ -542,7 +633,6 @@ class SqliteStore {
         );
       }
     });
-    tx();
   }
 
   getApplicationMode() {
@@ -601,7 +691,7 @@ class SqliteStore {
         interest = excluded.interest
     `);
     const del = this.db.prepare('DELETE FROM work_party_requests WHERE friday_check_in = ? AND hut = ? AND requestor_id = ?');
-    const tx = this.db.transaction(() => {
+    this.runTransaction(() => {
       for (const row of interests) {
         const interest = row.Interest || row.interest || 'no thank you';
         if (interest === 'no thank you') {
@@ -619,7 +709,6 @@ class SqliteStore {
         }
       }
     });
-    tx();
   }
 
   upsertWorkParty(row) {
