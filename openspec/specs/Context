@@ -1,0 +1,30 @@
+## Current Context
+
+The Sierra Club runs 4 popular backcountry ski huts.  The huts are maintained by volunteers.  In exchange for their service, the volunteers receive preference when making reservations.  Under the current process, an administrator enters requests from emailed forms in Word or PDF format.  Gathering all the data in a spreadsheet, the administrator manually sorts the requests by property, date, and priority to try to get everybody one of their choices.  Because requestors cannot currently see others’ reservation requests, however, they are unable to adjust their requests at the time of making them to reduce the risk of potential overlap.  As a result, requestors are asked to provide many backup choices.
+
+## Proposal
+
+A web-based application summarizing existing requests will help requestors navigate around other requests, improving the chances that everyone gets one of their top choices.  Additionally, allowing participants to do their own data entry and automating the lottery will save time for the administrator.
+
+## Summary
+
+Write a multi-user web-based application for a community of requestors to self-manage reservation requests for 4 backcountry huts.  The application will show the total spots requested so far for each hut-date combination, allowing requestors to adjust their requests and reduce overlap with other requestors.  There will be several components to the system:
+
+* Data Structure.  The format for the Requestor and Requests files.  
+* Backend.  Provides authenticated REST-based access to the Requestor and Request data for the user interfaces.  
+* Front end interface.  Where users create and adjust their requests.  
+* Admin interface.  The admin interface is for the hut administrator to manage requestor information, run the assignment process, and send out notifications.
+
+## Key Workflows
+### End User (Requestor)
+* Check and optionally update profile information
+* Enter preferred reservation locations and dates as a series of requests -- first choice, second choice, etc.  Each request can have an ideal and minimum party size and can have a choice of huts (in case the user has no strong preference on hut choice).
+* Adjust requests based on feedback in the app or an email reminder.  If some locations or weekends are especially busy, users with more flexibility may choose to go on different dates or to a different hut.
+
+### Admin User
+* Collect list of volunteers (happens prior) and load it into the app.
+* Send out a personalized email to all volunteers with their login code.
+* Upload a liability waiver to be signed and returned by each participant
+* Rotate the application mode between the different modes, which are: Off-season (December - July), Work-Party signup (August-October), and Ski-Trip request (November).
+* Remind users to review their requests prior to the deadline and make sure they are taking advantage of openings.
+* Lock requests and run the lottery, assigning huts to requestors.

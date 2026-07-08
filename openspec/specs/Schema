@@ -1,0 +1,68 @@
+We will use a lightweight relational database for our persistence store.  The tables are on the order of a few thousand rows each (maximum). 
+
+### Requestors  
+* Requestor\_ID (integer).  primary key.  Auto-generated random number.  Unique.  
+* Email (string).  Required.  
+* first_name (string). May be null.
+* last_name (string).  May be null.
+* address (string)
+* city (string)
+* state (string).  US state.
+* zip (string).  ZIP code.
+* Phone (string).  Backup communication method.   May be null.  
+* Comments (string).  May be null.  
+* Credits (integer).  Required.  Users with more credits are higher priority and will get to choose first.  
+* login_code (integer).  May be null if never logged in.
+* code_generated_when (Datetime).  may be null.  For code expiry, when did we send their email code most recently.  
+* Admin (boolean).  Does this person have admin rights.  
+* Creation\_date. (datetime).  When was the user record created.  
+* Last\_mod\_date. (datetime).  When was this user record last edited.
+* last\_failed\_login (datetime).  When was the last bad login code entered (for limiting brute force attacks)
+* years\_of\_service.  250-character text field with a concatenation of all the years  the requestor has volunteered.
+* has_a_chainsaw  (boolean)
+* chainsaw_user (boolean)
+* other_skills (250-character text field).  Other skills that the user wants to highlight.
+* private comments (250-character text field).  Comments that work party leaders can leave about a volunteer, not to be seen by that volunteer.
+* liability_waiver_date (datetime).  When was the most recent and properly executed liability waiver received for this volunteer.
+
+### Work Parties
+This table can grow year over year so that we record all the work parties hosted over time.
+* Friday evening check-in (date).  Primary key.
+* Hut (string).  Primary key.
+* Sunday evening check-out (date)
+* Leader (string)
+* Leader phone (string)
+* Capacity (integer)
+* Party comments (string).  Hiking distance, elevation, other things of note.
+
+### work party requests
+This is a table to capture the intersection of work parties and requestors.  This table grows over the years as requestors participate in more work parties.
+* Friday evening check-in (date).  Primary key.
+* Hut (string).  Primary key.
+* Requestor\_ID (integer).  Primary key.
+* Interest (string).  One of "no thank you", "only if you need me", and "please consider".  We don't need to store records recording "no thank you" -- a missing intersection record can represent this status.
+* Confirmation status (string).  One of "Pending", "Waitlist", and "Confirmed"
+* Attendance status (string).  One of "Early cancel", "Late cancel", "No-show", "full attended", or "partial attended".
+* added date (datetime).  When the requestor selected the work party, can be used for waitlist management.
+
+### ski trip requests
+  * Request\_ID (integer).  Primary key.
+  * Requestor\_ID (Integer).  
+  * Benson.  Boolean.  
+  * Bradley.  Boolean.  
+  * Grubb.  Boolean  
+  * Ludlow.  Boolean.  
+  * Arrival (date).  Check-in date.   For combination trips, the second arrival should be the same as the first departure.
+  * Departure (date).  Ending date (check-out) of the hut stay.  Must be after Arrival.  
+  * Choice\_Number (integer).  For example, 1 \= first choice, 2 \= second choice, etc.  A combination trip will have the same choice number twice with contiguous (non-overlapping) dates, for example a first choice with Benson and another first choice with Bradley, and the arrival date for the second request matches the departure date for the first request.
+  * Spots\_ideal.  Number of people requested.  Required to be between 1 and 15 (12 max for some huts).    
+  * Spots\_min.  The fewest \# of spots the requestor would accept without going to their next choice.  
+  * Hut\_granted.  Which hut was selected of the options.  
+  * Spots\_granted.  Spots that were available for confirmed requests.  
+  * Status. (string).  requested, granted, lost-lottery, not-needed.  Default is "requested".  (Legacy values pending/confirmed should be treated as requested/granted.)
+  * Lottery_value.  random # generated for the assignment lottery.  
+  * Creation\_date. (datetime).  When was the request created.  
+  * Last\_mod\_date. (datetime).  When was this request last edited.
+  * hut_count_flexibility (integer).  How many huts the request is open to.  This is a calculated field, based on the # of huts marked TRUE.
+  * saturday_week_number (integer).  This is a calculated field.  Using the saturday closest to the midpoint of the trip, which saturday does the trip cover.  This is calculated from the (departure date - arrival date) / 2 to get the midpoint, then find the closest saturday to that midpoint and calculate the week number for that saturday.
+  * Combination_first_request.  (integer).  The Request\_ID of the first hut.

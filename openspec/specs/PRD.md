@@ -1,41 +1,11 @@
-## Current Context
-
-The Sierra Club runs 4 popular backcountry ski huts.  The huts are maintained by volunteers.  In exchange for their service, the volunteers receive preference when making reservations.  Under the current process, an administrator enters requests from emailed forms in Word or PDF format.  Gathering all the data in a spreadsheet, the administrator manually sorts the requests by property, date, and priority to try to get everybody one of their choices.  Because requestors cannot currently see others’ reservation requests, however, they are unable to adjust their requests at the time of making them to reduce the risk of potential overlap.  As a result, requestors are asked to provide many backup choices.
-
-## Proposal
-
-A web-based application summarizing existing requests will help requestors navigate around other requests, improving the chances that everyone gets one of their top choices.  Additionally, allowing participants to do their own data entry and automating the lottery will save time for the administrator.
-
-## Summary
-
-Write a multi-user web-based application for a community of requestors to self-manage reservation requests for 4 backcountry huts.  The application will show the total spots requested so far for each hut-date combination, allowing requestors to adjust their requests and reduce overlap with other requestors.  There will be several components to the system:
-
-* Data Structure.  The format for the Requestor and Requests files.  
-* Backend.  Provides authenticated REST-based access to the Requestor and Request data for the user interfaces.  
-* Front end interface.  Where users create and adjust their requests.  
-* Admin interface.  The admin interface is for the hut administrator to manage requestor information, run the assignment process, and send out notifications.
-
-## Key Workflows
-### End User (Requestor)
-* Check and optionally update profile information
-* Enter preferred reservation locations and dates as a series of requests -- first choice, second choice, etc.  Each request can have an ideal and minimum party size and can have a choice of huts (in case the user has no strong preference on hut choice).
-* Adjust requests based on feedback in the app or an email reminder.  If some locations or weekends are especially busy, users with more flexibility may choose to go on different dates or to a different hut.
-
-### Admin User
-* Collect list of volunteers (happens prior) and loads it into the app.
-* Send out a personalized email to all volunteers with their login code.
-* Remind users to review their requests prior to the deadline and make sure they are taking advantage of openings.
-* Lock requests and run the lottery, assigning huts to requestors.
-
-## Front end Interface
 
 Requestors use a web browser to access the application. 
 
-### Application title
+# Application title
 The title of the application is "Sierra Club Ski Huts".
 The subtitle of the application is "Volunteer pre-reservation request system".
 
-### Authenticating users (login page)
+# Authenticating users (login page)
 
 Instead of a password system, we will send a code to the email of record.  The code will be valid for approximately 10 minutes.  The login page should show the following controls:
 * email.  Text field for user to enter their email.
@@ -45,20 +15,45 @@ Instead of a password system, we will send a code to the email of record.  The c
 
 When a user returns to the application within 7 days of a successful login using that same browser, the application should remember them.  If after 7 days, they can ask for a new code to be emailed.
 
-### Requests tab
+# Work Party tab
 
-The requests tab is the default tab.  The requests tab is split into two panels.  The left panel shows the user’s “choices list” (first choice, second choice, etc.).  The right panel is a detailed “availability view” of the schedule linked to the selected choice and showing availability from a few days before until a few days after the selected date range.
+The work party tab is the default tab in "Work party" mode and is disabled (not selectable) in "trip request" mode.  The work party tab shows all the work parties for that year, with the current status of the overall work party as well as any or all the assignments between the current user and that work party. The list is filtered to show just the current year work parties.
 
-#### Request list
+When the application is in trip request mode, the work tab is disabled and displays an informational message on hover: "Work party selection has not opened or is already completed"
 
-This panel occupies the left of the Requests tab and shows the list of the user’s requests.  
+The Work-party tab uses the workParty service to get, set, and mutate workParty assignments.
 
-* Requests are shown in priority order (first choice, second choice, etc).  Next to the choice number, offer a small info icon which shows on hover: "Add your requests in priority order. Check the availability preview on the right to reduce overlap." 
-* Requests are shown in collapsed (or summary) form by default and can be expanded with a small button with a stylized plus sign, which switches to a minus sign if the choice is expanded.    
-* When a request is expanded, all other requests are collapsed, leaving only one request expanded and in focus at a time.    
-* Initially, the user has no requests, and one blank request is provided.     
-* By default, the first choice request is expanded and the other choices are shown in collapsed form.
-* The request details include:  
+## Work Party list
+
+Users visit the work party tab to select the work parties that they would like to join.  The work parties are displayed as landscape-aspect cards with a border stacked vertically down the page (just the parties for the current year).  They are presented in chronological order (first to last).  Changing this page adds and edits records in the "work party requests" table.  The data fields are repeated for each work party card and include:
+* Dates: (read-only, from and to, usually a Saturday to Sunday)
+* Hut name: (read-only, Ludlow, Bradley, Benson, or Grubb)
+* Leader: (read-only)
+* Hike-in comments: (read-only, distance and elevation, and can one drive)
+* Work party availability: open, waitlist, closed.  (read-only by end-users)
+* Interest: This is an end-user-editable radio group, the choices are "No thank you", "Only if you need me" and "Please consider me".  The default selection is "No thank you"
+* My status: (blank), pending, waitlisted, confirmed (read-only).  The default value is blank. 
+
+There is a save button at the bottom of the tab that captures each user's changes across all the work party cards.
+
+# Trip Request tab
+
+The Trip Request tab is the default tab in Trip Request mode and is disabled (not selectable) in Work Party mode.  The purpose of the Trip Request tab is for the user to set and manage their lodging requests for the upcoming ski season.  These requests are not confirmed reservations at this point but the eventual winners from this lottery will be able to confirm their reserations with Clair Tappaan Lodge (CTL), which manages the huts.  
+
+The Trip Request tab is split into two panels.  The left panel shows the user’s “choices list” (first choice, second choice, etc.).  The right panel is a detailed “availability view” of the schedule linked to the selected choice and showing availability from a few days before until a few days after the selected date range.
+
+When the application is in Work Party mode, the Trip Request tab is disabled and displays an informational message on hover: "Ski hut trip request has not opened or is already completed"
+
+## Choices list
+
+This panel occupies the left of the Trip Request tab and shows the list of the user’s reservation requests.  
+
+* Reservation requests are shown in priority order (first choice, second choice, etc).  Next to the choice number, offer a small info icon which shows on hover: "Add your requests in priority order. Check the availability preview on the right to reduce overlap." 
+* Reservation requests are shown in collapsed (or summary) form by default and can be expanded with a small button with a stylized plus sign, which switches to a minus sign if the choice is expanded.    
+* When a reservation request is expanded, all other reservation requests are collapsed, leaving only one request expanded and in focus at a time.    
+* Initially, the user has no reservation requests, and one blank reservation request is provided.     
+* By default, the first choice reservation request is expanded and the other choices are shown in collapsed form.
+* The reservation request details include:  
   * Hut (checkboxes).  Multiple choices are allowed.  At least one is required.  Choices are Benson, Bradley, Grubb, Ludlow, Benson-\>Bradley, and Bradley-\>Benson.  Offer a small "circle-i" info icon which shows the following on hover: "Including more huts helps your odds, but you may end up with any hut.  Use extra choices for lower priorities."
   * For the combination trips Benson-\>Bradley and Bradley-\>Benson, both can be selectable.  In general, the user at this point is just indicating which trips they are interested in.  We will pick the one that allocates the space most efficiently to all the users and then the requestor will just take that one trip.
   * Arrival / check-in (date picker).  Required.  
@@ -77,14 +72,14 @@ This panel occupies the left of the Requests tab and shows the list of the user�
 * For combination trips, verify the traverse date is after the arrival date and before the departure date.
 * Verify the minimum spots requested is the same or fewer than the ideal spots requested.
 * Verify the choice numbers are 1 or greater.
-* When saving a request, adjust the request numbers to keep them in the same relative order but close any gaps.  For example, if the choices are 1, 2, and 4, renumber choice 4 to be 3, resulting in 1, 2, 3.
+* When saving a reservation request, adjust the reservation request numbers to keep them in the same relative order but close any gaps.  For example, if the choices are 1, 2, and 4, renumber choice 4 to be 3, resulting in 1, 2, 3.
 * The maximum trip length is 5 days.  Verify that the difference between the arrival and departure dates is 5 days or fewer.
 * Verify that the arrival and departure dates are no earlier than December 15th of the current year and no later than April 30th of next year.
-* Update calculated fields (hut_count_flexibility, saturday_week_number) every time a request changes.
+* Update calculated fields (hut_count_flexibility, saturday_week_number) every time a reservation request changes.
 
-#### Availability view
+## Availability view
 
-The availability view occupies the right side of the Requests tab.  It shows the selected request from the left panel in context with all other users’ requests for that same priority / choice level (first choice, second choice, etc), so that the user can see if there is an opening for their desired date.  The availability view uses the requestSummary endpoint and the currently selected Request details from the left panel.
+The availability view occupies the right side of the Trip Requests tab.  It shows the selected request from the left panel in context with all other users’ requests for that same priority / choice level (first choice, second choice, etc), so that the user can see if there is an opening for their desired date.  The availability view uses the requestSummary endpoint and the currently selected Request details from the left panel.
 
 The availability view is a grid of 6 or 7 columns including some header columns, and 138 rows (139 when the upcoming year is a leap year) including a header row.  The header row shows headers for each column:
 * Month and year
@@ -123,9 +118,9 @@ There is a legend above the availability grid with three small example squares a
 
 The scroll for the availability grid should be set to a few days before the arrival date in the request.  If the arrival date in the request is blank, the availability grid should be scrolled to the top.
 
-### Profile tab
+# Profile tab
 
-The Profile tab is the second tab.  The Profile tab shows the following fields:
+The Profile tab is the third tab.  The Profile tab is always available and shows the following fields:
 
 * Email (not mutable)  
 * First name (mutable)  
@@ -136,24 +131,33 @@ The Profile tab is the second tab.  The Profile tab shows the following fields:
 * ZIP (mutable)  
 * Phone (mutable)  
 * Comments (mutable)  
+* I am an experienced chainsaw user (mutable, checkbox)
+* I own a chainsaw and know how to tune it (mutable, checkbox)
 * Is\_an\_admin flag (mutable by admin users only)  
 * credits (mutable by admin users only)
 
 There is a save button for persisting edits to the mutable fields.  The profile tab works with the requestor endpoint.
 
-### Admin tab
+# Admin tab
 
 The admin tab is only available to users for whom the admin flag is set to TRUE.  The admin tab allows an upload of a tab-delimited file with a header row to upload the users table and a menu for other actions.
 
 The admin tab has a clickable list of available actions.  Actions include:
 
-#### Upload list of requestors 
+## Change application mode
+This is a pull-down which manually sets the application to one of a few values:
+ * Work Party mode.  Volunteers sign up for work parties to earn their trip credits.  Typically active in August and September.
+ * Trip Request mode.  Trip requests is where volunteers set their desired ski trip dates, which will turn into reservations.  Typically active in November.
+ * Inactive mode.  All other times.
+The application mode should be stored in a database table and have an admin service supporting it.
+
+## Upload list of requestors 
 Upload a tab-delimited file.  This will create new records where a requestor’s email does not exist already, and update records where the email is already present.  
 
-#### Run assignment algorithm
+## Run assignment algorithm
 (as described below in this document)
 
-#### Download requests
+## Download requests
 This action provides an administrator a look at the full data set, with requests and requestors joined together.  Include the following fields:
  * From requestors:
    * Requestor\_ID  
@@ -206,24 +210,14 @@ Provide a radio group next to this action which has three options:
 * Granted requests only
 * Requestors with no requests
 
-#### Efficiency report
-Calculate the % of requesting groups (and spots) who got their first choice, second choice, etc.
+## Efficiency report
+Calculate the % of requesting groups (and spots) who got their first choice, second choice, etc, or no choice.
 
-## Assignment Algorithm
-
-The goal of the assignment algorithm is to fulfill hut requests.
-1. Maximize the number of users who have a request fulfilled.
-2. Maximize the number of first choice requests.  If if a first-choice-requested hut does not have available spots, move to the second choice, third choice, etc.
-3. If necessary, reduce the number of spots requested (down to the minimum acceptable spots), or look at other huts if the request is open to other huts.
-4. In the case of a conflict, prioritize users with more work credits above users with fewer work credits.
-5. In the case of a conflict between users with the same work credits, choose the user for whom that request is ranked closer to their first choice.
-6. In the case of a conflict between users with the same work credit and same choice number, choose the winner that will maximize the overall number of granted requests, or choose at random.
-
-## Appendix: Hut and trip capacities
+# Appendix: Hut and trip capacities
 
 Benson=12
 Bradley=15
 Grubb=15
 Ludlow=15
-Benson->Bradley=12
-Bradley->Benson=12
+Benson->Bradley=12 (2-hut traverse)
+Bradley->Benson=12 (2-hut traverse)

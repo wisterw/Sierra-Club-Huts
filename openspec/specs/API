@@ -1,0 +1,52 @@
+Except for checkLogin, all of the backend endpoints require a valid session cookie.  These can be REST-based interfaces.  Some other approach could work also.
+
+At startup, open the requestors and requests files to make sure they are not locked.  If the files are locked, do not exist, or exist but do not have a valid header row, throw an error to the console and exit.
+
+**sendEmail**  This endpoint receives an email address from a user and enables valid users to login to the app. For sending email, use msmtp as a mail relay via nodemailer. Use the account named mail_relay_credentials in /etc/msmtprc .  The binary for msmtp is at /usr/bin/msmtp 
+* Strip any leading and trailing spaces.    
+* Check the email against the list of requestors to retrieve the user ID (case insensitive lookup).  If the provided email doesn’t exist, log an error quietly in back-end logs but return success to the front end ("code sent") to reduce the risk of user enumeration due to distinct error behavior.
+* if the provided email exists in the requestors file, generate a 4-digit random integer from 1000-9999.
+* write/persist the integer to the login_code column of the requestors file.  Write also the current time to the "code_generated_when" timestamp.  
+* Use msmtp to email the code to the verified address.  
+* For any internal errors caught while trying to send an email, append them to a local logfile .
+
+**checkLogin**  This endpoint receives an email address and a login code, and takes the following steps:
+* strip any leading and trailing spaces.    
+* Check the email address against the existing list of requestors (case-insensitive).  If the provided email doesn’t exist, log an error quietly in back end logs but return the standard error message to the front end to reduce the risk of user enumeration due to distinct error behavior.   The standard error message for authentication errors is "Login failure, please try again later or contact the hut administrator."
+* Check the "last_failed_login" attribute for that user and verify that the current time is 1 minute or more after last_failed_login.  If less than 1 minute in the past, return the standard error message.
+* Check the "code_generated_when" timestamp from the Requestors file.  If more than 10 minutes in the past, return the standard error message.
+* Retrieve the code as persisted in the login_code column of the Requestors file.
+* Compare the result with the code entered in the web form.  If the codes match, return the user ID for the authenticated user.  If the codes do not match, return the standard error message and write the current time to  "last_failed_login" for that user.
+
+**checkRequest**
+Check the following when saving Ski trip requests.  We don't expect these API calls to be made from external locations, only from our own front end, so maybe these rules live inside the front end, that would be ok.  
+* Departure is after arrival.
+* For combination trips, the arrival for the second request matches the departure for the first hut request.
+* For combination trips, Grubb and Ludlow are both false (for both the first and second request).
+* minimum spots requested is blank or (between 1 and the ideal spots requested, inclusive).
+* ideal spots requested is between 1 and the maximum spots for that hut, inclusive. 
+* choice numbers are 1 or greater; renumber choices periodically to keep them sequential.
+* trip length (departure date minus arrival date) is between 1 and 5 days, inclusive.
+* arrival is on or after Dec 15 of the current year.
+* departure is on or before Apr 30 of next year. 
+
+**Requestor**  Endpoint to get and mutate details about a specific requestor\_id, including their requests.  Returns, and accepts, requestor details.  Used by the profile and skitrip request pages. Might call checkRequest behind the scenes.  Admins can call Requestor for all requestors.
+
+**workParty**  For a specific year and requestor\_id, this endpoint sends back the full list of work parties planned, along with the attendance status of the work party overall based on available capacity, and the current selection of that user.  If the user has not selected that work party, display the current work party status as "not coming".  This endpoint also creates and modifies work party requests if the user requests or changes their work party preferences.
+
+**requestSummary**  Endpoint to get a read-only summary of all requests.  Accepts a choice number (first choice, second choice, etc) and the requestor id for the currently selected request.  Returns per date and hut:
+* higher-priority spots requested = ideal spots requested by higher-priority choices for requestors with the same credits as the selected requestor, plus ideal spots requested by first-choice requests from requestors with higher credits.  Split spots across all huts marked on a request.
+* same-priority spots requested = minimum spots requested for the same choice number from requestors with the same credits as the selected requestor.  Split spots across all huts marked on a request.
+* same-priority groups requesting = number of distinct requestors for the same choice number and credits for that hut and date.
+
+**assignTrips**
+The goal of the assignment algorithm is to fulfill hut requests according to our preferences, which are as follows (in order):
+1. Maximize the number of requestors who have any choice fulfilled.
+2. Maximize the choices closest to first choice, that is, minimize the sum of all the choice numbers.  If if a first-choice-requested hut does not have available spots, move to the second choice, and so on.
+3. If helpful to fulfill a request or others' requests, look to the other huts that the requestors have indicated they are open to -- for a given choice number, the requestor is indifferent to which hut is used (if they have a hut preference, the lower preference hut will be specified in a lower-ranked choice).
+4. If helpful to fulfill a request or others' requests, reduce the number of spots granted one-by-one down to the minimum acceptable spots.
+5. By work credits this year (more first)
+6. The reservation they paid for last year was closest in percentage terms to the reservation they requested last year (higher percentage first)
+7. By years of recent service (more first)
+8. By alphabetical order of email address (earliest first).  For repeatable results from test data.
+AssignTrips shall also log for each request granted which step in the above preference list it got to in the assignment algorithm.
