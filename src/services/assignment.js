@@ -37,6 +37,11 @@ function coerceLotteryValue(value) {
   return Number.isFinite(num) ? num : null;
 }
 
+function coerceYearsOfService(value) {
+  const num = Number(value);
+  return Number.isFinite(num) ? num : 0;
+}
+
 function assignLotteryValues(requestorsById, options = {}) {
   const rng = createRng(options.seed);
   const regenerate = options.regenerate !== false;
@@ -219,6 +224,7 @@ function runAssignment(requests, requestorsById, options = {}) {
         credits: getCredits(req),
         impact,
         flex,
+        yearsOfService: coerceYearsOfService(requestorsById.get(Number(req.Requestor_ID))?.years_of_service),
         lottery: coerceLotteryValue(requestorsById.get(Number(req.Requestor_ID))?.Lottery_value) ?? Number.MAX_SAFE_INTEGER,
       };
     });
@@ -227,6 +233,7 @@ function runAssignment(requests, requestorsById, options = {}) {
       if (b.credits !== a.credits) return b.credits - a.credits;
       if (a.impact !== b.impact) return a.impact - b.impact;
       if (a.flex !== b.flex) return a.flex - b.flex;
+      if (b.yearsOfService !== a.yearsOfService) return b.yearsOfService - a.yearsOfService;
       if (a.lottery !== b.lottery) return a.lottery - b.lottery;
       return Number(a.req.Requestor_ID || 0) - Number(b.req.Requestor_ID || 0);
     });

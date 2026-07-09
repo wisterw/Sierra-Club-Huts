@@ -10,7 +10,12 @@
     "test:migration": "node scripts/sqliteMigrationTest.js",
     "test:mode": "node scripts/appModeTest.js",
     "test:assignment-status": "node scripts/assignmentStatusTest.js",
-    "test:assignment-lottery-flag": "node scripts/assignmentLotteryFlagTest.js"
+    "test:assignment-lottery-flag": "node scripts/assignmentLotteryFlagTest.js",
+    "test:assignment-preference": "node scripts/assignmentPreferenceOrderTest.js",
+    "test:profile": "node scripts/profileAccessTest.js",
+    "test:trip-request": "node scripts/tripRequestVerificationTest.js",
+    "test:work-party": "node scripts/workPartySignupTest.js",
+    "test:smoke": "node scripts/browserSmokeTest.js"
   },
   "dependencies": {
     "express": "^4.22.1",

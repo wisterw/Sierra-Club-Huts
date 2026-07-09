@@ -93,3 +93,28 @@ There is a lightweight sanity test for the request-summary credit rules:
 
 To exercise the assignment algorithm on a small synthetic dataset:
 * `node scripts/assignmentHarness.js`
+
+### Database setup and rollback
+
+The app stores its relational data in `data/huts.sqlite` by default. On first start it imports from the TSV files in `data/`. If you want to reset a development database, stop the app and delete `data/huts.sqlite`; the next start will rebuild it from the TSV inputs.
+
+If you want to point the app at another database file, set `DATABASE_FILE` before starting the server. That is the cleanest way to isolate experiments without touching the checked-in data files.
+
+### Verification scripts
+
+The repo includes focused checks for the database migration, application mode, trip request rules, profile access, work-party signup, and assignment behavior:
+* `npm run test:migration`
+* `npm run test:mode`
+* `npm run test:summary`
+* `npm run test:profile`
+* `npm run test:trip-request`
+* `npm run test:work-party`
+* `npm run test:assignment-status`
+* `npm run test:assignment-lottery-flag`
+* `npm run test:smoke`
+
+### User and admin workflows
+
+The application supports three operating modes: `work-party`, `trip-request`, and `inactive`. In Work Party mode, requestors can review and save work-party interests. In Trip Request mode, requestors manage ski trip requests and review the availability summary. In Inactive mode, the mode-specific tabs are disabled.
+
+The Profile tab is where requestors update contact details and optional skill fields. Admin users can also edit credits, admin status, private comments, and liability waiver date. The Admin tab is where administrators change the application mode, upload requestors, regenerate lottery numbers, run assignment, and download joined request data.

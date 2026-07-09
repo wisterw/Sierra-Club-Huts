@@ -29,7 +29,7 @@
 - [x] 4.3 Update profile API response shaping so non-admin users never receive private/admin-only fields.
 - [x] 4.4 Update Profile UI to display and save user-editable expanded fields.
 - [x] 4.5 Update Admin-facing profile behavior so admins can edit admin-only requestor fields.
-- [ ] 4.6 Add tests for user edits, admin-only edits, and private field exposure.
+- [x] 4.6 Add tests for user edits, admin-only edits, and private field exposure.
 
 ## 5. Trip Request Management
 
@@ -39,7 +39,7 @@
 - [x] 5.4 Align backend validation with all current trip request rules, including combination constraints.
 - [x] 5.5 Ensure calculated fields update whenever trip requests change.
 - [x] 5.6 Update frontend request mapping and save behavior to preserve durable IDs and combination linkage.
-- [ ] 5.7 Add tests for validation, renumbering, calculated fields, combination trips, and summary math.
+- [x] 5.7 Add tests for validation, renumbering, calculated fields, combination trips, and summary math.
 
 ## 6. Work Party Signup
 
@@ -47,13 +47,13 @@
 - [x] 6.2 Add authenticated work-party API endpoints for current-year listing and interest saves.
 - [x] 6.3 Add Work Party tab markup and client logic for chronological cards, interest radios, read-only availability, and user status.
 - [x] 6.4 Add save behavior for all visible work-party interest changes.
-- [ ] 6.5 Add tests for listing, saving interest, missing-record `no thank you` behavior, and end-user read-only fields.
+- [x] 6.5 Add tests for listing, saving interest, missing-record `no thank you` behavior, and end-user read-only fields.
 
 ## 7. Admin Operations and Assignment
 
 - [x] 7.1 Update joined request download to include all required requestor and request fields from the database.
 - [x] 7.2 Implement all required joined download filters and sorting rules.
-- [ ] 7.3 Extend assignment to follow the documented preference order as closely as the available data supports.
+- [x] 7.3 Extend assignment to follow the documented preference order as closely as the available data supports.
 - [x] 7.4 Mark requests that cannot be fulfilled as `lost-lottery` and lower-priority choices skipped because a higher-priority choice was fulfilled as `not-used`.
 - [x] 7.5 Record assignment audit information for each granted request.
 - [x] 7.6 Update efficiency report to include first choice, second choice, later choices, and no-choice outcomes for groups and spots.
@@ -61,7 +61,7 @@
 
 ## 8. Verification and Documentation
 
-- [ ] 8.1 Update developer documentation for database setup, migration/import, and rollback.
-- [ ] 8.2 Update user/admin documentation for application modes, Work Party, Profile, and Admin workflows.
+- [x] 8.1 Update developer documentation for database setup, migration/import, and rollback.
+- [x] 8.2 Update user/admin documentation for application modes, Work Party, Profile, and Admin workflows.
 - [x] 8.3 Run the existing request summary test and the new persistence, API, and reporting tests.
-- [ ] 8.4 Perform a browser smoke test for login, mode switching, trip requests, work-party signup, profile, and admin operations.
+- [x] 8.4 Perform a browser smoke test for login, mode switching, trip requests, work-party signup, profile, and admin operations.
