@@ -26,9 +26,9 @@ The Work-party tab uses the workParty service to get, set, and mutate workParty 
 ## Work Party list
 
 Users visit the work party tab to select the work parties that they would like to join.  The work parties are displayed as landscape-aspect cards with a border stacked vertically down the page (just the parties for the current year).  They are presented in chronological order (first to last).  Changing this page adds and edits records in the "work party requests" table.  The data fields are repeated for each work party card and include:
-* Dates: (read-only, from and to, usually a Saturday to Sunday)
+* Dates: (read-only, from and to, usually a Friday to Sunday)
 * Hut name: (read-only, Ludlow, Bradley, Benson, or Grubb)
-* Leader: (read-only)
+* Leader name and email: (read-only)
 * Hike-in comments: (read-only, distance and elevation, and can one drive)
 * Work party availability: open, waitlist, closed.  (read-only by end-users)
 * Interest: This is an end-user-editable radio group, the choices are "No thank you", "Only if you need me" and "Please consider me".  The default selection is "No thank you"
@@ -122,7 +122,7 @@ The scroll for the availability grid should be set to a few days before the arri
 
 The Profile tab is the third tab.  The Profile tab is always available and shows the following fields:
 
-* Email (not mutable)  
+* Email (mutable)  
 * First name (mutable)  
 * Last name (mutable)  
 * Address (mutable)  
@@ -133,8 +133,16 @@ The Profile tab is the third tab.  The Profile tab is always available and shows
 * Comments (mutable)  
 * I am an experienced chainsaw user (mutable, checkbox)
 * I own a chainsaw and know how to tune it (mutable, checkbox)
-* Is\_an\_admin flag (mutable by admin users only)  
-* credits (mutable by admin users only)
+* Is\_an\_admin flag (immutable on this page)  
+* credits (immutable on this page)
+* years participated (immutable on this page) -- this is a string concatenating all the years, separated by spaces, in which the volunteer did work parties.  It is populated by the system during the assignment process.
+* received signed liability waiver date (immutable on this page).  When we last received a properly executed liability waiver from the volunteer.
+
+An info box on the "experienced chainsaw user" checkbox shows on hover the help text "Can execute a directional fell without binding".
+
+An info box on the "own a chainsaw" checkbox shows on hover the help text "tension, sharpen, lube, adjust carb".
+
+Next to the "received signed liability waiver" date field, show underlined "download blank" and "submit" links.  The download link downloads the latest liability waiver.  On pressing this, show a message "complete, scan, and submit the waiver".  The "submit" link pops up a file dialog allowing the user to choose and upload an image file from their device.  Upon a user successfully submitting a document, show a message "Your waiver will be reviewed manually over the next few days"
 
 There is a save button for persisting edits to the mutable fields.  The profile tab works with the requestor endpoint.
 
@@ -142,7 +150,7 @@ There is a save button for persisting edits to the mutable fields.  The profile 
 
 The admin tab is only available to users for whom the admin flag is set to TRUE.  The admin tab allows an upload of a tab-delimited file with a header row to upload the users table and a menu for other actions.
 
-The admin tab has a clickable list of available actions.  Actions include:
+The admin tab has various sections including:
 
 ## Change application mode
 This is a pull-down which manually sets the application to one of a few values:
@@ -151,8 +159,14 @@ This is a pull-down which manually sets the application to one of a few values:
  * Inactive mode.  All other times.
 The application mode should be stored in a database table and have an admin service supporting it.
 
-## Upload list of requestors 
-Upload a tab-delimited file.  This will create new records where a requestor’s email does not exist already, and update records where the email is already present.  
+## Manage volunteers 
+This section is for admins to manage volunteers, including uploading a tab-delimited file of new volunteers, or editing the attributes of existing volunteers.  Uploading volunteers will create new records where a requestor’s email does not exist already, and update rows where the email is already present.  
+
+Admins can also edit existing volunteers in the system by adding or editing private admin comments about the volunteers.
+
+## Review liability waivers
+
+This section or sub-tab lets admins scroll through the received liability waivers, check the signatures, and check a box which will mark the associated volunteer as having completed their waiver correctly.
 
 ## Run assignment algorithm
 This task exposes a checkbox which is defaulted to true, which is to "regenerate lottery numbers".  The value of this checkbox should be passed with the request to run the assignment algorithm.  The admin surface also exposes a separate action to regenerate lottery numbers before running assignment.
@@ -215,6 +229,13 @@ Provide a radio group next to this action which has three options:
 
 ## Efficiency report
 Calculate the % of requesting groups (and spots) who got their first choice, second choice, etc, or no choice.
+
+## Set up work parties and accept volunteers
+This section of the Admin tab allows admin users to add and edit work parties.  It is complicated enough to warrant taking over most of the page when active (like in a sub-tab).
+
+Show a read-only list of current work parties for the current year with hut, date, and leader.  Each row has an edit pencil or a trash can icon for deleting that work party.  There is a form below for adding a new work party.  If the user clicks on one of the work party edit pencils, the form is populated with the details of the work party.  All the fields are editable except the hut and the date.  The leader name is a pull-down showing the admin users.  The leader email is populated based on the name selected.  The Friday check-in date is a date picker.  
+
+Below the work party attributes, show the list of volunteers who have expressed interest so far.  Include attributes such as chainsaw experience, chainsaw ownership, years of experience, and private admin comments.   List the "Please consider me" volunteers first, in order of sign-up date (earliest first), then the "Only if you need me" volunteers.  For each volunteer, show a small set of mutually-exclusive toggle buttons indicating if that person is pending (default), accepted, or waitlisted.
 
 # Appendix: Hut and trip capacities
 
