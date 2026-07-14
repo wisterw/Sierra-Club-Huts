@@ -311,6 +311,155 @@ button:hover { border-color: var(--accent); }
   max-width: 100%;
 }
 
+.admin-console {
+  display: grid;
+  gap: 0.9rem;
+}
+
+.admin-nav {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.45rem;
+  padding-bottom: 0.2rem;
+  border-bottom: 1px solid var(--line);
+}
+
+.admin-nav button {
+  border-radius: 999px;
+  padding: 0.42rem 0.7rem;
+}
+
+.admin-nav button.active {
+  background: var(--accent);
+  border-color: var(--accent);
+  color: #fff;
+}
+
+.admin-section {
+  min-width: 0;
+}
+
+.admin-section > .kpi-card {
+  max-width: 720px;
+}
+
+.admin-placeholder {
+  max-width: 720px;
+  border: 1px dashed var(--line);
+  border-radius: 0.55rem;
+  background: #fff;
+  padding: 0.8rem;
+}
+
+.admin-placeholder h3 {
+  margin-top: 0;
+}
+
+.admin-placeholder p {
+  margin-bottom: 0;
+  color: var(--muted);
+}
+
+.waiver-profile-actions {
+  display: flex;
+  align-items: center;
+  gap: 0.7rem;
+  margin: -0.25rem 0 0.35rem;
+}
+
+.admin-filters {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(210px, 1fr));
+  gap: 0.65rem;
+  margin-bottom: 0.75rem;
+}
+
+.volunteer-table-wrap {
+  overflow: auto;
+  border: 1px solid var(--line);
+  border-radius: 0.55rem;
+  background: #fff;
+}
+
+.volunteer-table {
+  width: 100%;
+  min-width: 1080px;
+  border-collapse: collapse;
+  font-size: 0.82rem;
+}
+
+.waiver-table {
+  min-width: 760px;
+}
+
+.work-party-admin-table {
+  min-width: 1120px;
+}
+
+.admin-work-party-form {
+  margin-top: 1rem;
+  max-width: 980px;
+  border: 1px solid var(--line);
+  border-radius: 0.55rem;
+  background: #fff;
+  padding: 0.8rem;
+}
+
+.admin-work-party-form h3 {
+  margin-top: 0;
+}
+
+.admin-work-party-form .form-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(210px, 1fr));
+  gap: 0.65rem;
+}
+
+.admin-work-party-form .full-span {
+  grid-column: 1 / -1;
+}
+
+.volunteer-table th,
+.volunteer-table td {
+  border-bottom: 1px solid #e0e8df;
+  padding: 0.42rem;
+  text-align: left;
+  vertical-align: top;
+}
+
+.volunteer-table th {
+  position: sticky;
+  top: 0;
+  background: #f5faf4;
+  z-index: 1;
+}
+
+.row-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.3rem;
+  min-width: 260px;
+}
+
+.row-actions button {
+  padding: 0.32rem 0.45rem;
+  font-size: 0.78rem;
+}
+
+.link-button {
+  padding: 0;
+  border: 0;
+  border-radius: 0;
+  background: transparent;
+  color: var(--accent);
+  text-decoration: underline;
+  text-align: left;
+}
+
+.link-button:hover {
+  color: var(--accent-2);
+}
+
 .tabs button[data-tab="work-party"].active,
 .tabs button[data-tab="trip-request"].active {
   box-shadow: 0 0 0 1px rgba(0, 0, 0, 0.04);
@@ -318,4 +467,17 @@ button:hover { border-color: var(--accent); }
 
 @media (max-width: 980px) {
   .requests-layout { grid-template-columns: 1fr; }
+}
+
+@media (max-width: 620px) {
+  .tabs,
+  .admin-nav,
+  .inline-actions {
+    align-items: stretch;
+  }
+
+  .tabs button,
+  .admin-nav button {
+    flex: 1 1 180px;
+  }
 }

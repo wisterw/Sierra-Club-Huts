@@ -42,8 +42,8 @@ This is a table to capture the intersection of work parties and requestors.  Thi
 * Hut (string).  Primary key.
 * Requestor\_ID (integer).  Primary key.
 * Interest (string).  One of "no thank you", "only if you need me", and "please consider".  We don't need to store records recording "no thank you" -- a missing intersection record can represent this status.
-* Confirmation status (string).  One of "Pending", "Waitlist", and "Confirmed"
-* Attendance status (string).  One of "Early cancel", "Late cancel", "No-show", "full attended", or "partial attended".
+* Confirmation status (string).  One of "Pending", "Waitlisted", "Accepted".  This field can be blank, which is the same as if the intersection record is not present (use an outer join to produce this blank value in a join between requestors and work parties if necessary)
+* Attendance status (string).  This is a sub-status field of confirmation to document any details of what happened in the work party.  Can be blank, or one of "Cancelled", "No-show", "full attended", or "partial attended".
 * added date (datetime).  When the requestor selected the work party, can be used for waitlist management.
 
 ### ski trip requests
@@ -59,7 +59,7 @@ This is a table to capture the intersection of work parties and requestors.  Thi
   * Spots\_ideal.  Number of people requested.  Required to be between 1 and 15 (12 max for some huts).    
   * Spots\_min.  The fewest \# of spots the requestor would accept without going to their next choice.  
   * Hut\_granted.  Which hut was selected of the options.  
-  * Spots\_granted.  Spots that were available for confirmed requests.  
+  * Spots\_granted.  Spots that were available for accepted requests.  
   * Status. (string).  requested, granted, lost-lottery, not-used.  Default is "requested".  (Legacy values pending/confirmed should be treated as requested/granted.)
   * Creation\_date. (datetime).  When was the request created.  
   * Last\_mod\_date. (datetime).  When was this request last edited.

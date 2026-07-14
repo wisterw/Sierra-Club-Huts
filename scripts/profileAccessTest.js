@@ -22,6 +22,8 @@ function run() {
     chainsaw_user: false,
     private_comments: 'keep private',
     liability_waiver_date: '2026-01-02',
+    liability_waiver_file: 'private-waiver.pdf',
+    liability_waiver_submitted_at: '2026-01-01T00:00:00.000Z',
   });
 
   store.updateRequestorById(requestor.Requestor_ID, {
@@ -38,6 +40,8 @@ function run() {
   assert.strictEqual(publicView.Admin, false, 'non-admin update must not change admin flag');
   assert(!Object.prototype.hasOwnProperty.call(publicView, 'private_comments'), 'private comments must be omitted');
   assert(!Object.prototype.hasOwnProperty.call(publicView, 'liability_waiver_date'), 'waiver date must be omitted');
+  assert(!Object.prototype.hasOwnProperty.call(publicView, 'liability_waiver_file'), 'waiver file pointer must be omitted');
+  assert(!Object.prototype.hasOwnProperty.call(publicView, 'liability_waiver_submitted_at'), 'waiver submitted timestamp must be omitted');
 
   const adminUpdated = store.updateRequestorById(requestor.Requestor_ID, {
     Credits: 7,
@@ -54,6 +58,8 @@ function run() {
   const privateView = store.getRequestorById(requestor.Requestor_ID, { includePrivate: true });
   assert.strictEqual(privateView.private_comments, 'admin note');
   assert.strictEqual(privateView.liability_waiver_date, '2026-12-31');
+  assert.strictEqual(privateView.liability_waiver_file, 'private-waiver.pdf');
+  assert.strictEqual(privateView.liability_waiver_submitted_at, '2026-01-01T00:00:00.000Z');
 
   store.close();
   console.log('profile access test passed.');

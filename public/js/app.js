@@ -11,11 +11,42 @@ const HUT_CAPACITY = {
 const state = {
   me: null,
   mode: 'inactive',
+  adminSection: 'application-settings',
+  profileTarget: null,
+  volunteerRows: [],
+  volunteerFilterOptions: {
+    workParties: [],
+    acceptedStatuses: ['', 'pending', 'accepted', 'waitlisted'],
+    attendanceStatuses: ['', 'full attended', 'partial attended', 'no show', 'cancelled'],
+    reservationStatuses: ['all', 'none-submitted', 'submitted', 'none-granted', 'granted'],
+    waiverStatuses: ['all', 'approved', 'not-approved'],
+  },
+  volunteerFilters: {
+    acceptedStatus: 'all',
+    workPartyKey: 'all',
+    reservationStatus: 'all',
+    waiverStatus: 'all',
+  },
+  waiverReviewRows: [],
+  waiverReviewYear: new Date().getFullYear(),
+  adminWorkPartyRows: [],
+  adminWorkPartyLeaderOptions: [],
+  adminWorkPartyYear: new Date().getFullYear(),
+  editingWorkPartyKey: null,
   choices: [],
   workParties: [],
   selectedChoiceIndex: 0,
   summaryRows: [],
 };
+
+const ADMIN_SECTIONS = [
+  { id: 'application-settings', label: 'Application settings' },
+  { id: 'manage-volunteers', label: 'Manage volunteers/requestors' },
+  { id: 'review-waivers', label: 'Review liability waivers' },
+  { id: 'download-requests', label: 'Download requests' },
+  { id: 'efficiency-report', label: 'Efficiency report' },
+  { id: 'setup-work-parties', label: 'Set up work parties' },
+];
 
 const el = {
   loginCard: document.getElementById('login-card'),
@@ -37,13 +68,16 @@ const el = {
 };
 
 async function api(path, options = {}) {
+  const isFormData = options.body instanceof FormData;
   const res = await fetch(`/api${path}`, {
     method: options.method || 'GET',
-    headers: {
-      'Content-Type': 'application/json',
-      ...(options.headers || {}),
-    },
-    body: options.body ? JSON.stringify(options.body) : undefined,
+    headers: isFormData
+      ? { ...(options.headers || {}) }
+      : {
+          'Content-Type': 'application/json',
+          ...(options.headers || {}),
+        },
+    body: options.body ? (isFormData ? options.body : JSON.stringify(options.body)) : undefined,
   });
 
   const isTsv = (res.headers.get('content-type') || '').includes('tab-separated-values');
@@ -52,6 +86,15 @@ async function api(path, options = {}) {
     throw new Error(data.error || `${res.status} ${res.statusText}`);
   }
   return data;
+}
+
+function escapeHtml(value) {
+  return String(value ?? '')
+    .replace(/&/g, '&amp;')
+    .replace(/</g, '&lt;')
+    .replace(/>/g, '&gt;')
+    .replace(/"/g, '&quot;')
+    .replace(/'/g, '&#39;');
 }
 
 function currentSeasonDates() {
@@ -69,6 +112,15 @@ function currentSeasonDates() {
 
 function dateIso(d) {
   return d.toISOString().slice(0, 10);
+}
+
+function winterSeasonBounds(date) {
+  const month = date.getUTCMonth();
+  const startYear = month >= 11 ? date.getUTCFullYear() : date.getUTCFullYear() - 1;
+  return {
+    start: new Date(Date.UTC(startYear, 11, 15)),
+    end: new Date(Date.UTC(startYear + 1, 3, 30, 23, 59, 59, 999)),
+  };
 }
 
 function defaultChoice() {
@@ -271,10 +323,8 @@ function validateChoiceForSave(choice) {
     throw new Error('Trip length must be 5 days or fewer.');
   }
 
-  const year = arrival.getUTCFullYear();
-  const seasonStart = new Date(Date.UTC(year, 11, 15));
-  const seasonEnd = new Date(Date.UTC(year + 1, 3, 30, 23, 59, 59, 999));
-  if (arrival < seasonStart || departure > seasonEnd) {
+  const season = winterSeasonBounds(arrival);
+  if (arrival < season.start || departure > season.end) {
     throw new Error('Arrival and departure must be between Dec 15 and Apr 30 of the current season.');
   }
 
@@ -360,34 +410,74 @@ function renderSession() {
 function renderProfile() {
   if (!state.me) return;
   const isAdmin = Boolean(state.me.Admin);
+  const profile = state.profileTarget || state.me;
+  const editingOther = Boolean(state.profileTarget && state.profileTarget.Requestor_ID !== state.me.Requestor_ID);
   el.tabProfile.innerHTML = `
-    <h2>Profile</h2>
+    <h2>Profile${editingOther ? ` - ${escapeHtml(profile.first_name || profile.Email)}` : ''}</h2>
+    ${editingOther ? '<button type="button" id="return-own-profile">Return to my profile</button>' : ''}
     <form id="profile-form">
-      <label>Email<input disabled value="${state.me.Email}" /></label>
-      <label>First name<input name="first_name" value="${state.me.first_name || ''}" /></label>
-      <label>Last name<input name="last_name" value="${state.me.last_name || ''}" /></label>
-      <label>Address<input name="address" value="${state.me.address || ''}" /></label>
-      <label>City<input name="city" value="${state.me.city || ''}" /></label>
-      <label>State<input name="state" value="${state.me.state || ''}" /></label>
-      <label>ZIP<input name="zip" value="${state.me.zip || ''}" /></label>
-      <label>Phone<input name="Phone" value="${state.me.Phone || ''}" /></label>
-      <label>Comments<textarea name="Comments">${state.me.Comments || ''}</textarea></label>
-      <label class="checkbox-option"><input type="checkbox" name="has_a_chainsaw" ${state.me.has_a_chainsaw ? 'checked' : ''} /> <span>I am an experienced chainsaw user</span></label>
-      <label class="checkbox-option"><input type="checkbox" name="chainsaw_user" ${state.me.chainsaw_user ? 'checked' : ''} /> <span>I own a chainsaw and know how to tune it</span></label>
-      <label>Other skills<textarea name="other_skills">${state.me.other_skills || ''}</textarea></label>
+      <label>Email<input disabled value="${escapeHtml(profile.Email)}" /></label>
+      <label>First name<input name="first_name" value="${escapeHtml(profile.first_name || '')}" /></label>
+      <label>Last name<input name="last_name" value="${escapeHtml(profile.last_name || '')}" /></label>
+      <label>Address<input name="address" value="${escapeHtml(profile.address || '')}" /></label>
+      <label>City<input name="city" value="${escapeHtml(profile.city || '')}" /></label>
+      <label>State<input name="state" value="${escapeHtml(profile.state || '')}" /></label>
+      <label>ZIP<input name="zip" value="${escapeHtml(profile.zip || '')}" /></label>
+      <label>Phone<input name="Phone" value="${escapeHtml(profile.Phone || '')}" /></label>
+      <label>Comments<textarea name="Comments">${escapeHtml(profile.Comments || '')}</textarea></label>
+      <label class="checkbox-option"><input type="checkbox" name="has_a_chainsaw" ${profile.has_a_chainsaw ? 'checked' : ''} /> <span>I am an experienced chainsaw user</span></label>
+      <label class="checkbox-option"><input type="checkbox" name="chainsaw_user" ${profile.chainsaw_user ? 'checked' : ''} /> <span>I own a chainsaw and know how to tune it</span></label>
+      <label>Other skills<textarea name="other_skills">${escapeHtml(profile.other_skills || '')}</textarea></label>
       <label>Admin
         <select name="Admin" ${isAdmin ? '' : 'disabled'}>
-          <option value="false" ${state.me.Admin ? '' : 'selected'}>False</option>
-          <option value="true" ${state.me.Admin ? 'selected' : ''}>True</option>
+          <option value="false" ${profile.Admin ? '' : 'selected'}>False</option>
+          <option value="true" ${profile.Admin ? 'selected' : ''}>True</option>
         </select>
       </label>
-      <label>Credits<input type="number" name="Credits" ${isAdmin ? '' : 'disabled'} value="${state.me.Credits}" /></label>
-      <label>Private comments<textarea name="private_comments" ${isAdmin ? '' : 'disabled'}>${state.me.private_comments || ''}</textarea></label>
-      <label>Liability waiver date<input type="date" name="liability_waiver_date" ${isAdmin ? '' : 'disabled'} value="${state.me.liability_waiver_date || ''}" /></label>
+      <label>Credits<input type="number" name="Credits" ${isAdmin ? '' : 'disabled'} value="${profile.Credits}" /></label>
+      <label>Private comments<textarea name="private_comments" ${isAdmin ? '' : 'disabled'}>${escapeHtml(profile.private_comments || '')}</textarea></label>
+      <label>Liability waiver date<input type="date" name="liability_waiver_date" ${isAdmin ? '' : 'disabled'} value="${escapeHtml(profile.liability_waiver_date || '')}" /></label>
+      <div class="waiver-profile-actions">
+        <a href="/api/liability-waiver/blank" target="_blank" rel="noopener">download blank</a>
+        <button type="button" class="link-button" id="submit-waiver-btn">submit</button>
+        <input class="hidden" type="file" id="waiver-file-input" accept=".pdf,.jpg,.jpeg,.png,application/pdf,image/jpeg,image/png" />
+      </div>
       <button type="submit">Save Profile</button>
       <div id="profile-msg"></div>
     </form>
   `;
+
+  const returnBtn = document.getElementById('return-own-profile');
+  if (returnBtn) returnBtn.addEventListener('click', () => {
+    state.profileTarget = null;
+    renderProfile();
+  });
+
+  const waiverBtn = document.getElementById('submit-waiver-btn');
+  const waiverInput = document.getElementById('waiver-file-input');
+  if (waiverBtn && waiverInput && !editingOther) {
+    waiverBtn.addEventListener('click', () => waiverInput.click());
+    waiverInput.addEventListener('change', async () => {
+      const file = waiverInput.files?.[0];
+      if (!file) return;
+      const fd = new FormData();
+      fd.append('file', file);
+      const msg = document.getElementById('profile-msg');
+      try {
+        const response = await api('/liability-waiver', { method: 'POST', body: fd });
+        msg.textContent = response.message || 'Your waiver will be reviewed manually over the next few days';
+        if (response.requestor) {
+          state.me = response.requestor;
+        }
+      } catch (err) {
+        msg.textContent = err.message;
+      } finally {
+        waiverInput.value = '';
+      }
+    });
+  } else if (waiverBtn) {
+    waiverBtn.disabled = true;
+  }
 
   document.getElementById('profile-form').addEventListener('submit', async (e) => {
     e.preventDefault();
@@ -412,8 +502,12 @@ function renderProfile() {
       payload.liability_waiver_date = fd.get('liability_waiver_date');
     }
 
-    const updated = await api(`/requestor/${state.me.Requestor_ID}`, { method: 'PUT', body: payload });
-    state.me = updated;
+    const updated = await api(`/requestor/${profile.Requestor_ID}`, { method: 'PUT', body: payload });
+    if (profile.Requestor_ID === state.me.Requestor_ID) {
+      state.me = updated;
+    } else {
+      state.profileTarget = updated;
+    }
     document.getElementById('profile-msg').textContent = 'Saved.';
     renderSession();
   });
@@ -792,69 +886,561 @@ function download(url) {
   window.open(url, '_blank', 'noopener');
 }
 
+function renderAdminPlaceholder(title, body) {
+  return `
+    <div class="admin-placeholder">
+      <h3>${title}</h3>
+      <p>${body}</p>
+    </div>
+  `;
+}
+
+function volunteerFilterQuery() {
+  const params = new URLSearchParams({
+    acceptedStatus: state.volunteerFilters.acceptedStatus || 'all',
+    workPartyKey: state.volunteerFilters.workPartyKey || 'all',
+    reservationStatus: state.volunteerFilters.reservationStatus || 'all',
+    waiverStatus: state.volunteerFilters.waiverStatus || 'all',
+  });
+  return params.toString();
+}
+
+async function loadVolunteerManagement() {
+  const data = await api(`/admin/volunteers?${volunteerFilterQuery()}`);
+  state.volunteerRows = data.rows || [];
+  state.volunteerFilterOptions = data.filters || state.volunteerFilterOptions;
+}
+
+function renderVolunteerManagement() {
+  const selectedWorkParty = state.volunteerFilters.workPartyKey && state.volunteerFilters.workPartyKey !== 'all';
+  const rows = state.volunteerRows.map((row) => `
+    <tr>
+      <td><button type="button" class="link-button" data-profile-id="${row.Requestor_ID}">${escapeHtml(row.Name || row.Email)}</button></td>
+      <td>${escapeHtml(row.Phone || '')}</td>
+      <td>${escapeHtml(row.city || '')}</td>
+      <td>${escapeHtml(row.Email || '')}</td>
+      <td>${escapeHtml(row.work_parties_applied_for || '')}</td>
+      <td>${escapeHtml(row.private_comments || '')}</td>
+      <td>${escapeHtml(row.years_of_service || '')}</td>
+      <td>${row.has_a_chainsaw ? 'Yes' : 'No'}</td>
+      <td>${row.chainsaw_user ? 'Yes' : 'No'}</td>
+      <td>${escapeHtml(row.waiver_status || '')}</td>
+      <td>${Number(row.hut_trip_request_count || 0)}</td>
+      <td>
+        <div class="row-actions">
+          <button type="button" data-volunteer-action="comments" data-requestor-id="${row.Requestor_ID}">Comments</button>
+          <button type="button" data-volunteer-action="waiver" data-requestor-id="${row.Requestor_ID}">Approve waiver</button>
+          <button type="button" data-volunteer-action="accepted" data-status="accepted" data-requestor-id="${row.Requestor_ID}" ${selectedWorkParty ? '' : 'disabled'}>Accepted</button>
+          <button type="button" data-volunteer-action="accepted" data-status="waitlisted" data-requestor-id="${row.Requestor_ID}" ${selectedWorkParty ? '' : 'disabled'}>Waitlisted</button>
+          <button type="button" data-volunteer-action="attendance" data-status="full attended" data-requestor-id="${row.Requestor_ID}" ${selectedWorkParty ? '' : 'disabled'}>Full attended</button>
+          <button type="button" data-volunteer-action="attendance" data-status="partial attended" data-requestor-id="${row.Requestor_ID}" ${selectedWorkParty ? '' : 'disabled'}>Partial attended</button>
+          <button type="button" data-volunteer-action="attendance" data-status="no show" data-requestor-id="${row.Requestor_ID}" ${selectedWorkParty ? '' : 'disabled'}>No show</button>
+          <button type="button" data-volunteer-action="attendance" data-status="cancelled" data-requestor-id="${row.Requestor_ID}" ${selectedWorkParty ? '' : 'disabled'}>Cancelled</button>
+        </div>
+      </td>
+    </tr>
+  `).join('');
+
+  return `
+    <div class="volunteer-management">
+      <div class="admin-filters">
+        <label>Work party accepted status
+          <select id="volunteer-accepted-filter">
+            <option value="all" ${state.volunteerFilters.acceptedStatus === 'all' ? 'selected' : ''}>Show all</option>
+            <option value="pending" ${state.volunteerFilters.acceptedStatus === 'pending' ? 'selected' : ''}>pending</option>
+            <option value="accepted" ${state.volunteerFilters.acceptedStatus === 'accepted' ? 'selected' : ''}>accepted</option>
+            <option value="waitlisted" ${state.volunteerFilters.acceptedStatus === 'waitlisted' ? 'selected' : ''}>waitlisted</option>
+          </select>
+        </label>
+        <label>Work party
+          <select id="volunteer-work-party-filter">
+            <option value="all" ${state.volunteerFilters.workPartyKey === 'all' ? 'selected' : ''}>Show all</option>
+            ${(state.volunteerFilterOptions.workParties || []).map((wp) => `<option value="${escapeHtml(wp.key)}" ${state.volunteerFilters.workPartyKey === wp.key ? 'selected' : ''}>${escapeHtml(wp.label)}</option>`).join('')}
+          </select>
+        </label>
+        <label>Reservation status
+          <select id="volunteer-reservation-filter">
+            <option value="all" ${state.volunteerFilters.reservationStatus === 'all' ? 'selected' : ''}>Show all</option>
+            <option value="none-submitted" ${state.volunteerFilters.reservationStatus === 'none-submitted' ? 'selected' : ''}>no requests submitted for next year</option>
+            <option value="submitted" ${state.volunteerFilters.reservationStatus === 'submitted' ? 'selected' : ''}>requests submitted for next year</option>
+            <option value="none-granted" ${state.volunteerFilters.reservationStatus === 'none-granted' ? 'selected' : ''}>requests but none granted</option>
+            <option value="granted" ${state.volunteerFilters.reservationStatus === 'granted' ? 'selected' : ''}>requests granted</option>
+          </select>
+        </label>
+        <label>Liability waiver
+          <select id="volunteer-waiver-filter">
+            <option value="all" ${state.volunteerFilters.waiverStatus === 'all' ? 'selected' : ''}>Show all</option>
+            <option value="approved" ${state.volunteerFilters.waiverStatus === 'approved' ? 'selected' : ''}>waiver approved for this year</option>
+            <option value="not-approved" ${state.volunteerFilters.waiverStatus === 'not-approved' ? 'selected' : ''}>no waiver approved for this year</option>
+          </select>
+        </label>
+      </div>
+      <div id="volunteer-msg"></div>
+      <div class="volunteer-table-wrap">
+        <table class="volunteer-table">
+          <thead>
+            <tr>
+              <th>Name</th><th>Phone</th><th>City</th><th>Email</th><th>Work parties applied for</th>
+              <th>Admin comments</th><th>Years</th><th>Chainsaw skills</th><th>Chainsaw</th>
+              <th>Waiver</th><th>Trip requests</th><th>Actions</th>
+            </tr>
+          </thead>
+          <tbody>${rows || '<tr><td colspan="12">No volunteers match the selected filters.</td></tr>'}</tbody>
+        </table>
+      </div>
+    </div>
+  `;
+}
+
+function wireVolunteerManagement() {
+  const filterMap = [
+    ['volunteer-accepted-filter', 'acceptedStatus'],
+    ['volunteer-work-party-filter', 'workPartyKey'],
+    ['volunteer-reservation-filter', 'reservationStatus'],
+    ['volunteer-waiver-filter', 'waiverStatus'],
+  ];
+  for (const [id, key] of filterMap) {
+    const input = document.getElementById(id);
+    if (!input) continue;
+    input.addEventListener('change', async () => {
+      state.volunteerFilters[key] = input.value;
+      await loadVolunteerManagement();
+      renderAdmin();
+    });
+  }
+
+  for (const btn of el.tabAdmin.querySelectorAll('[data-profile-id]')) {
+    btn.addEventListener('click', async () => {
+      state.profileTarget = await api(`/requestor/${btn.dataset.profileId}`);
+      renderProfile();
+      setTab('profile');
+    });
+  }
+
+  for (const btn of el.tabAdmin.querySelectorAll('[data-volunteer-action]')) {
+    btn.addEventListener('click', async () => {
+      const requestorId = btn.dataset.requestorId;
+      const action = btn.dataset.volunteerAction;
+      const msg = document.getElementById('volunteer-msg');
+      try {
+        if (action === 'comments') {
+          const row = state.volunteerRows.find((r) => String(r.Requestor_ID) === String(requestorId));
+          const next = window.prompt('Private admin comments', row?.private_comments || '');
+          if (next === null) return;
+          await api(`/admin/volunteers/${requestorId}/private-comments`, {
+            method: 'PUT',
+            body: { private_comments: next },
+          });
+          msg.textContent = 'Comments saved.';
+        } else if (action === 'waiver') {
+          await api(`/admin/volunteers/${requestorId}/approve-waiver`, { method: 'POST', body: {} });
+          msg.textContent = 'Waiver approved.';
+        } else if (action === 'accepted') {
+          await api(`/admin/volunteers/${requestorId}/work-party-accepted-status`, {
+            method: 'PUT',
+            body: { workPartyKey: state.volunteerFilters.workPartyKey, status: btn.dataset.status },
+          });
+          msg.textContent = 'Work-party accepted status saved.';
+        } else if (action === 'attendance') {
+          await api(`/admin/volunteers/${requestorId}/work-party-attendance-status`, {
+            method: 'PUT',
+            body: { workPartyKey: state.volunteerFilters.workPartyKey, status: btn.dataset.status },
+          });
+          msg.textContent = 'Work-party attendance status saved.';
+        }
+        await loadVolunteerManagement();
+        renderAdmin();
+      } catch (err) {
+        msg.textContent = err.message;
+      }
+    });
+  }
+}
+
+async function loadWaiverReview() {
+  const data = await api(`/admin/liability-waivers?year=${encodeURIComponent(state.waiverReviewYear)}`);
+  state.waiverReviewRows = data.rows || [];
+}
+
+function renderWaiverReview() {
+  const rows = state.waiverReviewRows.map((row) => `
+    <tr>
+      <td><button type="button" class="link-button" data-profile-id="${row.Requestor_ID}">${escapeHtml(row.Name || row.Email)}</button></td>
+      <td>${escapeHtml(row.Email || '')}</td>
+      <td>${escapeHtml(row.Phone || '')}</td>
+      <td>${escapeHtml(row.city || '')}</td>
+      <td>${escapeHtml(row.liability_waiver_submitted_at || '')}</td>
+      <td>
+        <div class="row-actions">
+          <button type="button" data-waiver-action="download" data-requestor-id="${row.Requestor_ID}">Download</button>
+          <button type="button" data-waiver-action="approve" data-requestor-id="${row.Requestor_ID}">Approve</button>
+        </div>
+      </td>
+    </tr>
+  `).join('');
+
+  return `
+    <div class="waiver-review">
+      <div class="admin-filters">
+        <label>Year<input id="waiver-review-year" type="number" min="2020" max="2100" value="${Number(state.waiverReviewYear)}" /></label>
+      </div>
+      <div id="waiver-review-msg"></div>
+      <div class="volunteer-table-wrap">
+        <table class="volunteer-table waiver-table">
+          <thead>
+            <tr><th>Name</th><th>Email</th><th>Phone</th><th>City</th><th>Submitted</th><th>Actions</th></tr>
+          </thead>
+          <tbody>${rows || '<tr><td colspan="6">No liability waivers are pending review.</td></tr>'}</tbody>
+        </table>
+      </div>
+    </div>
+  `;
+}
+
+function wireWaiverReview() {
+  const yearInput = document.getElementById('waiver-review-year');
+  if (yearInput) yearInput.addEventListener('change', async () => {
+    state.waiverReviewYear = Number(yearInput.value || new Date().getFullYear());
+    await loadWaiverReview();
+    renderAdmin();
+  });
+
+  for (const btn of el.tabAdmin.querySelectorAll('[data-profile-id]')) {
+    btn.addEventListener('click', async () => {
+      state.profileTarget = await api(`/requestor/${btn.dataset.profileId}`);
+      renderProfile();
+      setTab('profile');
+    });
+  }
+
+  for (const btn of el.tabAdmin.querySelectorAll('[data-waiver-action]')) {
+    btn.addEventListener('click', async () => {
+      const requestorId = btn.dataset.requestorId;
+      const action = btn.dataset.waiverAction;
+      const msg = document.getElementById('waiver-review-msg');
+      try {
+        if (action === 'download') {
+          download(`/api/admin/liability-waivers/${requestorId}/download`);
+        } else if (action === 'approve') {
+          await api(`/admin/liability-waivers/${requestorId}/approve`, { method: 'POST', body: {} });
+          msg.textContent = 'Waiver approved.';
+          await loadWaiverReview();
+          renderAdmin();
+        }
+      } catch (err) {
+        msg.textContent = err.message;
+      }
+    });
+  }
+}
+
+async function loadAdminWorkParties() {
+  const data = await api(`/admin/work-parties?year=${encodeURIComponent(state.adminWorkPartyYear)}`);
+  state.adminWorkPartyRows = data.rows || [];
+  state.adminWorkPartyLeaderOptions = data.leaderOptions || [];
+}
+
+function currentEditingWorkParty() {
+  return state.adminWorkPartyRows.find((row) => row.key === state.editingWorkPartyKey) || null;
+}
+
+function renderAdminWorkPartyManagement() {
+  const editing = currentEditingWorkParty();
+  const formTitle = editing ? 'Edit work party' : 'Add work party';
+  const rows = state.adminWorkPartyRows.map((row) => `
+    <tr>
+      <td>${escapeHtml(row.Friday_check_in || '')}</td>
+      <td>${escapeHtml(row.Hut || '')}</td>
+      <td>${escapeHtml(row.Sunday_check_out || '')}</td>
+      <td>${escapeHtml(row.Leader || '')}</td>
+      <td>${escapeHtml(row.Leader_contact || row.Leader_phone || '')}</td>
+      <td>${Number(row.Capacity || 0)}</td>
+      <td>${escapeHtml(row.Availability || 'open')}</td>
+      <td>${escapeHtml(row.Party_comments || '')}</td>
+      <td>
+        <div class="row-actions">
+          <button type="button" data-work-party-action="edit" data-work-party-key="${escapeHtml(row.key)}">Edit</button>
+          <button type="button" data-work-party-action="delete" data-work-party-key="${escapeHtml(row.key)}">Delete</button>
+        </div>
+      </td>
+    </tr>
+  `).join('');
+  const leaderOptions = state.adminWorkPartyLeaderOptions.map((leader) => `
+    <option value="${leader.Requestor_ID}"
+      data-name="${escapeHtml(leader.Name || '')}"
+      data-contact="${escapeHtml(leader.contact || '')}"
+      ${editing && (editing.Leader === leader.Name || editing.Leader_contact === leader.contact) ? 'selected' : ''}>
+      ${escapeHtml(leader.label || leader.Email)}
+    </option>
+  `).join('');
+
+  return `
+    <div class="work-party-management">
+      <div class="admin-filters">
+        <label>Year<input id="admin-work-party-year" type="number" min="2020" max="2100" value="${Number(state.adminWorkPartyYear)}" /></label>
+      </div>
+      <div id="admin-work-party-msg"></div>
+      <div class="volunteer-table-wrap">
+        <table class="volunteer-table work-party-admin-table">
+          <thead>
+            <tr>
+              <th>Friday</th><th>Hut</th><th>Sunday</th><th>Leader</th><th>Contact</th>
+              <th>Capacity</th><th>Availability</th><th>Comments</th><th>Actions</th>
+            </tr>
+          </thead>
+          <tbody>${rows || '<tr><td colspan="9">No work parties are set up for this year.</td></tr>'}</tbody>
+        </table>
+      </div>
+      <form id="admin-work-party-form" class="admin-work-party-form">
+        <h3>${formTitle}</h3>
+        <div class="form-grid">
+          <label>Friday check-in<input type="date" name="Friday_check_in" ${editing ? 'disabled' : ''} value="${escapeHtml(editing?.Friday_check_in || '')}" required /></label>
+          <label>Hut
+            <select name="Hut" ${editing ? 'disabled' : ''} required>
+              ${HUTS.map((hut) => `<option value="${hut}" ${editing?.Hut === hut ? 'selected' : ''}>${hut}</option>`).join('')}
+            </select>
+          </label>
+          <label>Sunday check-out<input type="date" name="Sunday_check_out" value="${escapeHtml(editing?.Sunday_check_out || '')}" /></label>
+          <label>Leader
+            <select id="admin-work-party-leader" name="leaderOption">
+              <option value="">Manual entry</option>
+              ${leaderOptions}
+            </select>
+          </label>
+          <label>Leader name<input name="Leader" value="${escapeHtml(editing?.Leader || '')}" /></label>
+          <label>Leader contact<input name="Leader_contact" value="${escapeHtml(editing?.Leader_contact || editing?.Leader_phone || '')}" /></label>
+          <label>Capacity<input type="number" min="0" step="1" name="Capacity" value="${Number(editing?.Capacity ?? 0)}" /></label>
+          <label>Availability
+            <select name="Availability">
+              ${['open', 'waitlist-only', 'closed'].map((value) => `<option value="${value}" ${(editing?.Availability || 'open') === value ? 'selected' : ''}>${value}</option>`).join('')}
+            </select>
+          </label>
+          <label class="full-span">Comments<textarea name="Party_comments">${escapeHtml(editing?.Party_comments || '')}</textarea></label>
+        </div>
+        <div class="inline-actions">
+          <button type="submit">${editing ? 'Save changes' : 'Create work party'}</button>
+          ${editing ? '<button type="button" id="cancel-work-party-edit">Cancel edit</button>' : ''}
+        </div>
+      </form>
+    </div>
+  `;
+}
+
+function workPartyFormPayload(form) {
+  const fd = new FormData(form);
+  return {
+    year: Number(state.adminWorkPartyYear),
+    Friday_check_in: fd.get('Friday_check_in'),
+    Hut: fd.get('Hut'),
+    Sunday_check_out: fd.get('Sunday_check_out'),
+    Leader: fd.get('Leader'),
+    Leader_contact: fd.get('Leader_contact'),
+    Capacity: Number(fd.get('Capacity') || 0),
+    Availability: fd.get('Availability'),
+    Party_comments: fd.get('Party_comments'),
+  };
+}
+
+function wireAdminWorkPartyManagement() {
+  const yearInput = document.getElementById('admin-work-party-year');
+  if (yearInput) yearInput.addEventListener('change', async () => {
+    state.adminWorkPartyYear = Number(yearInput.value || new Date().getFullYear());
+    state.editingWorkPartyKey = null;
+    await loadAdminWorkParties();
+    renderAdmin();
+  });
+
+  const leaderSelect = document.getElementById('admin-work-party-leader');
+  if (leaderSelect) leaderSelect.addEventListener('change', () => {
+    const selected = leaderSelect.selectedOptions[0];
+    if (!selected || !selected.value) return;
+    const form = document.getElementById('admin-work-party-form');
+    form.elements.Leader.value = selected.dataset.name || '';
+    form.elements.Leader_contact.value = selected.dataset.contact || '';
+  });
+
+  const cancelBtn = document.getElementById('cancel-work-party-edit');
+  if (cancelBtn) cancelBtn.addEventListener('click', () => {
+    state.editingWorkPartyKey = null;
+    renderAdmin();
+  });
+
+  const form = document.getElementById('admin-work-party-form');
+  if (form) form.addEventListener('submit', async (e) => {
+    e.preventDefault();
+    const msg = document.getElementById('admin-work-party-msg');
+    try {
+      const body = workPartyFormPayload(form);
+      if (state.editingWorkPartyKey) {
+        await api(`/admin/work-parties/${encodeURIComponent(state.editingWorkPartyKey)}`, {
+          method: 'PUT',
+          body,
+        });
+        msg.textContent = 'Work party saved.';
+      } else {
+        await api('/admin/work-parties', { method: 'POST', body });
+        msg.textContent = 'Work party created.';
+      }
+      state.editingWorkPartyKey = null;
+      await loadAdminWorkParties();
+      await loadWorkParties().catch(() => { state.workParties = []; });
+      renderWorkParty();
+      renderAdmin();
+    } catch (err) {
+      msg.textContent = err.message;
+    }
+  });
+
+  for (const btn of el.tabAdmin.querySelectorAll('[data-work-party-action]')) {
+    btn.addEventListener('click', async () => {
+      const key = btn.dataset.workPartyKey;
+      const action = btn.dataset.workPartyAction;
+      const msg = document.getElementById('admin-work-party-msg');
+      if (action === 'edit') {
+        state.editingWorkPartyKey = key;
+        renderAdmin();
+        return;
+      }
+      if (action === 'delete') {
+        const row = state.adminWorkPartyRows.find((x) => x.key === key);
+        const ok = window.confirm(`Delete ${row?.Hut || ''} ${row?.Friday_check_in || ''}? Volunteer applications for this work party will also be removed.`);
+        if (!ok) return;
+        try {
+          await api(`/admin/work-parties/${encodeURIComponent(key)}?year=${encodeURIComponent(state.adminWorkPartyYear)}`, {
+            method: 'DELETE',
+          });
+          msg.textContent = 'Work party deleted.';
+          state.editingWorkPartyKey = null;
+          await loadAdminWorkParties();
+          await loadWorkParties().catch(() => { state.workParties = []; });
+          renderWorkParty();
+          renderAdmin();
+        } catch (err) {
+          msg.textContent = err.message;
+        }
+      }
+    });
+  }
+}
+
 async function renderAdmin() {
   if (!state.me?.Admin) {
     el.tabAdmin.innerHTML = '<h2>Admin</h2><p>Admin access required.</p>';
     return;
   }
 
+  if (!ADMIN_SECTIONS.some((section) => section.id === state.adminSection)) {
+    state.adminSection = 'application-settings';
+  }
+
+  if (state.adminSection === 'manage-volunteers') {
+    await loadVolunteerManagement().catch(() => {
+      state.volunteerRows = [];
+    });
+  }
+  if (state.adminSection === 'review-waivers') {
+    await loadWaiverReview().catch(() => {
+      state.waiverReviewRows = [];
+    });
+  }
+  if (state.adminSection === 'setup-work-parties') {
+    await loadAdminWorkParties().catch(() => {
+      state.adminWorkPartyRows = [];
+      state.adminWorkPartyLeaderOptions = [];
+    });
+  }
+
   el.tabAdmin.innerHTML = `
     <h2>Admin</h2>
-    <div class="kpi-grid">
-      <div class="kpi-card">
-        <h3>Application Mode</h3>
-        <label>Mode
-          <select id="app-mode">
-            <option value="work-party" ${state.mode === 'work-party' ? 'selected' : ''}>Work Party mode</option>
-            <option value="trip-request" ${state.mode === 'trip-request' ? 'selected' : ''}>Trip Request mode</option>
-            <option value="inactive" ${state.mode === 'inactive' ? 'selected' : ''}>Inactive mode</option>
-          </select>
-        </label>
-        <div class="inline-actions">
-          <button id="save-mode">Save mode</button>
-        </div>
-        <div id="mode-msg"></div>
-      </div>
-      <div class="kpi-card">
-        <h3>Upload Requestors TSV</h3>
-        <form id="upload-form">
-          <input type="file" name="file" accept=".tsv,text/tab-separated-values" required />
-          <button type="submit">Upload</button>
-        </form>
-        <div id="upload-msg"></div>
-      </div>
-      <div class="kpi-card">
-        <h3>Run Assignment</h3>
-        <label class="checkbox-option"><input id="regenerate-lottery" type="checkbox" checked /> <span>Regenerate lottery numbers</span></label>
-        <div class="inline-actions">
-          <button id="run-assignment">Run assignment</button>
-          <button id="regenerate-lottery-btn">Regenerate lottery numbers</button>
-        </div>
-        <div id="assign-msg"></div>
-        <div id="lottery-msg"></div>
-      </div>
-      <div class="kpi-card">
-        <h3>Download Requests</h3>
-        <div class="download-switch">
-          <label><input type="radio" name="download-filter" value="all" checked /> All requests</label>
-          <label><input type="radio" name="download-filter" value="granted" /> Granted requests only</label>
-          <label><input type="radio" name="download-filter" value="none" /> Requestors with no requests</label>
-        </div>
-        <div class="inline-actions">
-          <button id="download-joined">Download joined requests</button>
+    <div class="admin-console">
+      <nav class="admin-nav" aria-label="Admin sections">
+        ${ADMIN_SECTIONS.map((section) => `
+          <button type="button" class="${state.adminSection === section.id ? 'active' : ''}" data-admin-section="${section.id}">
+            ${section.label}
+          </button>
+        `).join('')}
+      </nav>
+      <div class="admin-section ${state.adminSection === 'application-settings' ? '' : 'hidden'}" data-admin-panel="application-settings">
+        <div class="kpi-grid">
+          <div class="kpi-card">
+            <h3>Season Mode</h3>
+            <label>Mode
+              <select id="app-mode">
+                <option value="work-party" ${state.mode === 'work-party' ? 'selected' : ''}>Work Party mode</option>
+                <option value="trip-request" ${state.mode === 'trip-request' ? 'selected' : ''}>Trip Request mode</option>
+                <option value="inactive" ${state.mode === 'inactive' ? 'selected' : ''}>Inactive mode</option>
+              </select>
+            </label>
+            <div class="inline-actions">
+              <button id="save-mode">Save mode</button>
+            </div>
+            <div id="mode-msg"></div>
+          </div>
+          <div class="kpi-card">
+            <h3>Run Assignment Lottery</h3>
+            <label class="checkbox-option"><input id="regenerate-lottery" type="checkbox" checked /> <span>Regenerate lottery numbers</span></label>
+            <div class="inline-actions">
+              <button id="run-assignment">Run lottery</button>
+              <button id="regenerate-lottery-btn">Regenerate lottery numbers</button>
+            </div>
+            <div id="assign-msg"></div>
+            <div id="lottery-msg"></div>
+          </div>
         </div>
       </div>
-      <div class="kpi-card">
-        <h3>Efficiency Report</h3>
-        <div class="inline-actions">
-          <button id="load-efficiency">Load efficiency report</button>
+      <div class="admin-section ${state.adminSection === 'manage-volunteers' ? '' : 'hidden'}" data-admin-panel="manage-volunteers">
+        ${state.adminSection === 'manage-volunteers' ? renderVolunteerManagement() : ''}
+      </div>
+      <div class="admin-section ${state.adminSection === 'review-waivers' ? '' : 'hidden'}" data-admin-panel="review-waivers">
+        ${state.adminSection === 'review-waivers' ? renderWaiverReview() : ''}
+      </div>
+      <div class="admin-section ${state.adminSection === 'download-requests' ? '' : 'hidden'}" data-admin-panel="download-requests">
+        <div class="kpi-card">
+          <h3>Download Requests</h3>
+          <div class="download-switch">
+            <label><input type="radio" name="download-filter" value="all" checked /> All requests</label>
+            <label><input type="radio" name="download-filter" value="granted" /> Granted requests only</label>
+            <label><input type="radio" name="download-filter" value="none" /> Requestors with no requests</label>
+          </div>
+          <div class="inline-actions">
+            <button id="download-joined">Download joined requests</button>
+          </div>
         </div>
-        <div id="eff-table"></div>
+      </div>
+      <div class="admin-section ${state.adminSection === 'efficiency-report' ? '' : 'hidden'}" data-admin-panel="efficiency-report">
+        <div class="kpi-card">
+          <h3>Efficiency Report</h3>
+          <div class="inline-actions">
+            <button id="load-efficiency">Load efficiency report</button>
+          </div>
+          <div id="eff-table"></div>
+        </div>
+      </div>
+      <div class="admin-section ${state.adminSection === 'setup-work-parties' ? '' : 'hidden'}" data-admin-panel="setup-work-parties">
+        ${state.adminSection === 'setup-work-parties' ? renderAdminWorkPartyManagement() : ''}
       </div>
     </div>
   `;
 
-  document.getElementById('save-mode').addEventListener('click', async () => {
+  for (const btn of el.tabAdmin.querySelectorAll('[data-admin-section]')) {
+    btn.addEventListener('click', () => {
+      state.adminSection = btn.dataset.adminSection;
+      renderAdmin();
+    });
+  }
+
+  if (state.adminSection === 'manage-volunteers') {
+    wireVolunteerManagement();
+  }
+  if (state.adminSection === 'review-waivers') {
+    wireWaiverReview();
+  }
+  if (state.adminSection === 'setup-work-parties') {
+    wireAdminWorkPartyManagement();
+  }
+
+  const saveModeBtn = document.getElementById('save-mode');
+  if (saveModeBtn) saveModeBtn.addEventListener('click', async () => {
     const mode = document.getElementById('app-mode').value;
     const data = await api('/mode', { method: 'PUT', body: { mode } });
     state.mode = data.mode;
@@ -862,22 +1448,16 @@ async function renderAdmin() {
     applyModeUi();
   });
 
-  document.getElementById('upload-form').addEventListener('submit', async (e) => {
-    e.preventDefault();
-    const formData = new FormData(e.currentTarget);
-    const res = await fetch('/api/admin/upload-requestors', { method: 'POST', body: formData });
-    const data = await res.json();
-    document.getElementById('upload-msg').textContent = res.ok ? `Upserted ${data.createdOrUpdated} records.` : data.error;
-  });
-
-  document.getElementById('download-joined').addEventListener('click', () => {
+  const downloadJoinedBtn = document.getElementById('download-joined');
+  if (downloadJoinedBtn) downloadJoinedBtn.addEventListener('click', () => {
     const selected = el.tabAdmin.querySelector('input[name="download-filter"]:checked');
     const filter = selected ? selected.value : 'all';
     download(`/api/admin/download/requests-joined?filter=${filter}`);
   });
 
   const regenerateLottery = document.getElementById('regenerate-lottery');
-  document.getElementById('run-assignment').addEventListener('click', async () => {
+  const runAssignmentBtn = document.getElementById('run-assignment');
+  if (runAssignmentBtn) runAssignmentBtn.addEventListener('click', async () => {
     const data = await api('/admin/run-assignment', {
       method: 'POST',
       body: { regenerateLotteryNumbers: regenerateLottery.checked },
@@ -885,12 +1465,14 @@ async function renderAdmin() {
     document.getElementById('assign-msg').textContent = data.message;
   });
 
-  document.getElementById('regenerate-lottery-btn').addEventListener('click', async () => {
+  const regenerateLotteryBtn = document.getElementById('regenerate-lottery-btn');
+  if (regenerateLotteryBtn) regenerateLotteryBtn.addEventListener('click', async () => {
     const data = await api('/admin/regenerate-lottery', { method: 'POST', body: {} });
     document.getElementById('lottery-msg').textContent = data.message;
   });
 
-  document.getElementById('load-efficiency').addEventListener('click', async () => {
+  const loadEfficiencyBtn = document.getElementById('load-efficiency');
+  if (loadEfficiencyBtn) loadEfficiencyBtn.addEventListener('click', async () => {
     const data = await api('/admin/efficiency-report');
     const rows = data.rows || [];
     document.getElementById('eff-table').innerHTML = rows.length

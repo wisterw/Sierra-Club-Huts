@@ -3,7 +3,7 @@ const fs = require('fs');
 const os = require('os');
 const path = require('path');
 const { SqliteStore } = require('../src/data/sqliteStore');
-const { validateRequest, summarizeByChoice } = require('../src/services/requestLogic');
+const { validateRequest, validateRequestSet, summarizeByChoice } = require('../src/services/requestLogic');
 const { HUTS } = require('../src/config');
 
 function makeTempDb() {
@@ -40,12 +40,24 @@ function requestRow(requestorId, choice, huts, arrival, departure, ideal, min = 
 
 function run() {
   assert.strictEqual(validateRequest(requestRow(1, 1, ['Benson'], '2026-12-20', '2026-12-22', 4, 2)), null);
+  assert.strictEqual(validateRequest(requestRow(1, 1, ['Benson'], '2027-01-20', '2027-01-22', 4, 2)), null);
+  assert.strictEqual(validateRequest(requestRow(1, 1, ['Benson'], '2027-04-29', '2027-04-30', 4, 2)), null);
+  assert(validateRequest(requestRow(1, 1, ['Benson'], '2026-12-10', '2026-12-12', 4, 2)));
+  assert(validateRequest(requestRow(1, 1, ['Benson'], '2027-04-29', '2027-05-01', 4, 2)));
   assert(validateRequest(requestRow(1, 1, ['Benson'], '2026-12-22', '2026-12-20', 4, 2)));
   assert(validateRequest(requestRow(1, 1, ['Benson'], '2026-12-20', '2026-12-28', 4, 2)));
   assert(validateRequest(requestRow(1, 1, [], '2026-12-20', '2026-12-22', 4, 2)));
   assert(validateRequest(requestRow(1, 1, ['Benson'], '2026-12-20', '2026-12-22', 16, 2)));
   assert(validateRequest(requestRow(1, 1, ['Benson'], '2026-12-20', '2026-12-22', 4, 5)));
   assert(validateRequest(requestRow(1, 0, ['Benson'], '2026-12-20', '2026-12-22', 4, 2)));
+  assert.strictEqual(validateRequestSet([
+    { ...requestRow(1, 1, ['Benson'], '2026-12-20', '2026-12-21', 4, 2), Client_combo_group: '1:Benson->Bradley' },
+    { ...requestRow(1, 1, ['Bradley'], '2026-12-21', '2026-12-23', 4, 2), Client_combo_group: '1:Benson->Bradley' },
+  ]), null);
+  assert(validateRequestSet([
+    { ...requestRow(1, 1, ['Benson'], '2026-12-20', '2026-12-21', 4, 2), Client_combo_group: '1:Benson->Bradley' },
+    { ...requestRow(1, 1, ['Bradley'], '2026-12-22', '2026-12-23', 4, 2), Client_combo_group: '1:Benson->Bradley' },
+  ]));
 
   const dbPath = makeTempDb();
   const store = new SqliteStore({ dbPath, importTsv: false });
@@ -55,7 +67,10 @@ function run() {
   });
 
   const requests = [
-    requestRow(requestorRecord.Requestor_ID, 1, ['Benson', 'Bradley'], '2026-12-20', '2026-12-22', 4, 2),
+    requestRow(requestorRecord.Requestor_ID, 1, ['Benson', 'Bradley'], '2026-12-20', '2026-12-22', 4, 2, {
+      hut_count_flexibility: 99,
+      saturday_week_number: 'stale',
+    }),
     requestRow(requestorRecord.Requestor_ID, 2, ['Grubb'], '2026-12-23', '2026-12-25', 6, 3),
     requestRow(requestorRecord.Requestor_ID, 4, ['Ludlow'], '2026-12-26', '2026-12-28', 5, 2),
   ];
@@ -65,6 +80,7 @@ function run() {
   assert.deepStrictEqual(saved.map((r) => r.Choice_Number), [1, 2, 3], 'choices should renumber sequentially');
   assert.strictEqual(saved[0].hut_count_flexibility, 2);
   assert.strictEqual(saved[0].saturday_week_number.length, 10);
+  assert.notStrictEqual(saved[0].saturday_week_number, 'stale');
 
   const linkedRequests = saved.map((row) => ({
     ...row,

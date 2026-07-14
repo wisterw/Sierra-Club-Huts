@@ -34,6 +34,8 @@ Check the following when saving Ski trip requests.  We don't expect these API ca
 
 **workParty**  For a specific year and requestor\_id, this endpoint sends back the full list of work parties planned, along with the attendance status of the work party overall based on available capacity, and the current selection of that user.  If the user has not selected that work party, display the current work party status as "not coming".  This endpoint also creates and modifies work party requests if the user requests or changes their work party preferences.
 
+ - Automatic waitlist invocation:  Every time there is a change to the attendance of a work party (including new volunteers adding themselves as "pending"), the workparty service should check the attendance of the work party so far and adjust the work party status according to the following rule: If the number of pending + accepted + waitlisted volunteers is greater than the work party capacity, and the work party status is currently open, set the work party status to "waitlist only".
+
 **requestSummary**  Endpoint to get a read-only summary of all requests.  Accepts a choice number (first choice, second choice, etc) and the requestor id for the currently selected request.  Returns per date and hut:
 * higher-priority spots requested = ideal spots requested by higher-priority choices for requestors with the same credits as the selected requestor, plus ideal spots requested by first-choice requests from requestors with higher credits.  Split spots across all huts marked on a request.
 * same-priority spots requested = minimum spots requested for the same choice number from requestors with the same credits as the selected requestor.  Split spots across all huts marked on a request.

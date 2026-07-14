@@ -30,9 +30,9 @@ Users visit the work party tab to select the work parties that they would like t
 * Hut name: (read-only, Ludlow, Bradley, Benson, or Grubb)
 * Leader name and email: (read-only)
 * Hike-in comments: (read-only, distance and elevation, and can one drive)
-* Work party availability: open, waitlist, closed.  (read-only by end-users)
+* Work party availability: open, waitlist-only, closed.  (read-only by end-users)
 * Interest: This is an end-user-editable radio group, the choices are "No thank you", "Only if you need me" and "Please consider me".  The default selection is "No thank you"
-* My status: (blank), pending, waitlisted, confirmed (read-only).  The default value is blank. 
+* status: (blank), pending, waitlisted, or accepted (read-only).  The default value is blank. 
 
 There is a save button at the bottom of the tab that captures each user's changes across all the work party cards.
 
@@ -133,10 +133,10 @@ The Profile tab is the third tab.  The Profile tab is always available and shows
 * Comments (mutable)  
 * I am an experienced chainsaw user (mutable, checkbox)
 * I own a chainsaw and know how to tune it (mutable, checkbox)
-* Is\_an\_admin flag (immutable on this page)  
-* credits (immutable on this page)
-* years participated (immutable on this page) -- this is a string concatenating all the years, separated by spaces, in which the volunteer did work parties.  It is populated by the system during the assignment process.
-* received signed liability waiver date (immutable on this page).  When we last received a properly executed liability waiver from the volunteer.
+* Is\_an\_admin flag (mutable for admins only; immutable for non-admins)  
+* work party credits (mutable for admins only; immutable for non-admins)
+* years of service (mutable for admins only; immutable for non-admins) -- this is a string concatenating all the years, separated by spaces, in which the volunteer did work parties.  It is populated by the system during the assignment process.
+* received signed liability waiver date (mutable for admins only; immutable for non-admins).  When we last received a properly executed liability waiver from the volunteer.  include a link to the liability waiver, which is persisted on the server.
 
 An info box on the "experienced chainsaw user" checkbox shows on hover the help text "Can execute a directional fell without binding".
 
@@ -146,96 +146,9 @@ Next to the "received signed liability waiver" date field, show underlined "down
 
 There is a save button for persisting edits to the mutable fields.  The profile tab works with the requestor endpoint.
 
-# Admin tab
+Below the profile fields, show the past and current pending work party history for that user.
 
-The admin tab is only available to users for whom the admin flag is set to TRUE.  The admin tab allows an upload of a tab-delimited file with a header row to upload the users table and a menu for other actions.
-
-The admin tab has various sections including:
-
-## Change application mode
-This is a pull-down which manually sets the application to one of a few values:
- * Work Party mode.  Volunteers sign up for work parties to earn their trip credits.  Typically active in August and September.
- * Trip Request mode.  Trip requests is where volunteers set their desired ski trip dates, which will turn into reservations.  Typically active in November.
- * Inactive mode.  All other times.
-The application mode should be stored in a database table and have an admin service supporting it.
-
-## Manage volunteers 
-This section is for admins to manage volunteers, including uploading a tab-delimited file of new volunteers, or editing the attributes of existing volunteers.  Uploading volunteers will create new records where a requestor’s email does not exist already, and update rows where the email is already present.  
-
-Admins can also edit existing volunteers in the system by adding or editing private admin comments about the volunteers.
-
-## Review liability waivers
-
-This section or sub-tab lets admins scroll through the received liability waivers, check the signatures, and check a box which will mark the associated volunteer as having completed their waiver correctly.
-
-## Run assignment algorithm
-This task exposes a checkbox which is defaulted to true, which is to "regenerate lottery numbers".  The value of this checkbox should be passed with the request to run the assignment algorithm.  The admin surface also exposes a separate action to regenerate lottery numbers before running assignment.
-
-The lottery number used for assignment is stored on the requestor record, and assignment uses the lowest lottery number as the final tiebreak after all other ranking criteria are applied.  If regeneration is disabled, existing non-null lottery numbers are preserved.
-
-## Download requests
-This action provides an administrator a look at the full data set, with requests and requestors joined together.  Include the following fields:
- * From requestors:
-   * Requestor\_ID  
-   * Email
-   * first_name
-   * last_name
-   * address
-   * city
-   * state
-   * zip
-   * Phone
-   * Comments 
- * Credits
- * code_generated_when 
- * Admin (boolean)
- * Creation\_date 
- * Last\_mod\_date
- * last\_failed\_login
- * years_of_service
- * lottery_value
- * From requests:
-   * Benson
-   * Bradley
-   * Grubb
-   * Ludlow
-   * Arrival 
-   * Departure 
-   * Choice\_Number
-   * Spots\_ideal
-   * Spots\_min
-   * Hut\_granted
-   * Spots\_granted
-   * Status
-   * Lottery_value 
-   * Creation\_date  
-   * Last\_mod\_date
-   * hut_count_flexibility
-   * saturday_week_number
-
-Run the join as an outer join, where a row is included for each requestor even if they have no requests.
-
-Sort the results by:   
-  1. Saturday_week_number
-  2. Requestor credits descending
-  3. Choice_number ascending  
-  4. hut_count_flexibility
-  5. Lottery_value
-  
-Provide a radio group next to this action which has three options:
-* All requests
-* Granted requests only
-* Requestors with no requests
-
-## Efficiency report
-Calculate the % of requesting groups (and spots) who got their first choice, second choice, etc, or no choice.
-
-## Set up work parties and accept volunteers
-This section of the Admin tab allows admin users to add and edit work parties.  It is complicated enough to warrant taking over most of the page when active (like in a sub-tab).
-
-Show a read-only list of current work parties for the current year with hut, date, and leader.  Each row has an edit pencil or a trash can icon for deleting that work party.  There is a form below for adding a new work party.  If the user clicks on one of the work party edit pencils, the form is populated with the details of the work party.  All the fields are editable except the hut and the date.  The leader name is a pull-down showing the admin users.  The leader email is populated based on the name selected.  The Friday check-in date is a date picker.  
-
-Below the work party attributes, show the list of volunteers who have expressed interest so far.  Include attributes such as chainsaw experience, chainsaw ownership, years of experience, and private admin comments.   List the "Please consider me" volunteers first, in order of sign-up date (earliest first), then the "Only if you need me" volunteers.  For each volunteer, show a small set of mutually-exclusive toggle buttons indicating if that person is pending (default), accepted, or waitlisted.
+Below the work party history, show the current ski trip reservation requests for that user.
 
 # Appendix: Hut and trip capacities
 

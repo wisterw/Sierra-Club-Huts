@@ -1,7 +1,8 @@
 const fs = require('fs');
+const path = require('path');
 const express = require('express');
 const multer = require('multer');
-const { EMAIL_ERROR_LOG } = require('../config');
+const { BLANK_WAIVER_FILE, EMAIL_ERROR_LOG } = require('../config');
 const { toTsv, REQUESTORS_HEADERS } = require('../data/tsvStore');
 const { SqliteStore, boolFromAny } = require('../data/sqliteStore');
 const {
@@ -12,10 +13,12 @@ const {
   sendLoginCodeEmail,
   toFourDigitCode,
 } = require('../services/auth');
-const { validateRequest, summarizeByChoice } = require('../services/requestLogic');
+const { validateRequestSet, summarizeByChoice } = require('../services/requestLogic');
 const { assignLotteryValues, runAssignment, efficiencyReport, requestsJoinedReport } = require('../services/assignment');
 
 const upload = multer();
+const WAIVER_UPLOAD_MAX_BYTES = 10 * 1024 * 1024;
+const WAIVER_UPLOAD_MIME_TYPES = new Set(['application/pdf', 'image/jpeg', 'image/png']);
 const router = express.Router();
 const store = new SqliteStore();
 const AUTH_FAILURE_MESSAGE = 'Login failure, please try again later or contact the hut administrator.';
@@ -64,7 +67,17 @@ function requestorPayload(requestor, options = {}) {
   }
   delete payload.private_comments;
   delete payload.liability_waiver_date;
+  delete payload.liability_waiver_file;
+  delete payload.liability_waiver_submitted_at;
   return payload;
+}
+
+function validateWaiverUpload(file) {
+  if (!file) return 'Missing file upload.';
+  if (!file.buffer?.length) return 'Uploaded waiver file is empty.';
+  if (file.size > WAIVER_UPLOAD_MAX_BYTES) return 'Uploaded waiver file is too large.';
+  if (!WAIVER_UPLOAD_MIME_TYPES.has(file.mimetype)) return 'Unsupported waiver file type.';
+  return null;
 }
 
 router.post('/send-email', async (req, res) => {
@@ -257,11 +270,9 @@ router.put('/requestor/:id/requests', requireAuth, (req, res) => {
   }
 
   const requests = Array.isArray(req.body.requests) ? req.body.requests : [];
-  for (const request of requests) {
-    const error = validateRequest(request);
-    if (error) {
-      return res.status(400).json({ error });
-    }
+  const error = validateRequestSet(requests);
+  if (error) {
+    return res.status(400).json({ error });
   }
 
   store.replaceRequestsForRequestor(id, requests);
@@ -309,6 +320,71 @@ router.put('/work-parties', requireAuth, (req, res) => {
   store.saveWorkPartyInterests(requestorId, interests);
   const year = Number(req.body?.year || new Date().getFullYear());
   return res.json({ ok: true, rows: store.listWorkParties(year, requestorId) });
+});
+
+router.get('/admin/work-parties', requireAuth, requireAdmin, (req, res) => {
+  const year = Number(req.query.year || new Date().getFullYear());
+  return res.json(store.adminWorkPartyManagementPayload(year));
+});
+
+router.post('/admin/work-parties', requireAuth, requireAdmin, (req, res) => {
+  try {
+    const row = store.createWorkParty(req.body || {});
+    const year = Number(req.body?.year || new Date().getFullYear());
+    return res.json({ ok: true, row, payload: store.adminWorkPartyManagementPayload(year) });
+  } catch (err) {
+    return res.status(400).json({ error: err.message });
+  }
+});
+
+router.put('/admin/work-parties/:key', requireAuth, requireAdmin, (req, res) => {
+  try {
+    const row = store.updateWorkParty({ workPartyKey: req.params.key }, req.body || {});
+    if (!row) {
+      return res.status(404).json({ error: 'Work party not found.' });
+    }
+    const year = Number(req.body?.year || new Date().getFullYear());
+    return res.json({ ok: true, row, payload: store.adminWorkPartyManagementPayload(year) });
+  } catch (err) {
+    return res.status(400).json({ error: err.message });
+  }
+});
+
+router.delete('/admin/work-parties/:key', requireAuth, requireAdmin, (req, res) => {
+  try {
+    const deleted = store.deleteWorkParty({ workPartyKey: req.params.key });
+    if (!deleted) {
+      return res.status(404).json({ error: 'Work party not found.' });
+    }
+    const year = Number(req.query.year || new Date().getFullYear());
+    return res.json({ ok: true, payload: store.adminWorkPartyManagementPayload(year) });
+  } catch (err) {
+    return res.status(400).json({ error: err.message });
+  }
+});
+
+router.get('/liability-waiver/blank', requireAuth, (_req, res) => {
+  if (!fs.existsSync(BLANK_WAIVER_FILE)) {
+    return res.status(404).json({ error: 'Blank liability waiver file is not configured.' });
+  }
+  return res.download(BLANK_WAIVER_FILE, 'blank-liability-waiver.txt');
+});
+
+router.post('/liability-waiver', requireAuth, upload.single('file'), (req, res) => {
+  const error = validateWaiverUpload(req.file);
+  if (error) {
+    return res.status(400).json({ error });
+  }
+  try {
+    const updated = store.saveLiabilityWaiverFile(Number(req.session.userId), req.file);
+    return res.json({
+      ok: true,
+      message: 'Your waiver will be reviewed manually over the next few days',
+      requestor: requestorPayload(updated, { includePrivate: Boolean(updated.Admin) }),
+    });
+  } catch (err) {
+    return res.status(400).json({ error: err.message });
+  }
 });
 
 router.post('/admin/upload-requestors', requireAuth, requireAdmin, upload.single('file'), (req, res) => {
@@ -372,6 +448,94 @@ router.post('/admin/upload-requestors', requireAuth, requireAdmin, upload.single
   }
 
   return res.json({ ok: true, createdOrUpdated });
+});
+
+router.get('/admin/volunteers', requireAuth, requireAdmin, (req, res) => {
+  const filters = {
+    year: Number(req.query.year || new Date().getFullYear()),
+    workPartyKey: String(req.query.workPartyKey || 'all'),
+    acceptedStatus: String(req.query.acceptedStatus || 'all'),
+    reservationStatus: String(req.query.reservationStatus || 'all'),
+    waiverStatus: String(req.query.waiverStatus || 'all'),
+  };
+  return res.json(store.volunteerManagementPayload(filters));
+});
+
+router.get('/admin/liability-waivers', requireAuth, requireAdmin, (req, res) => {
+  const year = Number(req.query.year || new Date().getFullYear());
+  return res.json({ year, rows: store.listLiabilityWaiverReviewQueue(year) });
+});
+
+router.get('/admin/liability-waivers/:id/download', requireAuth, requireAdmin, (req, res) => {
+  try {
+    const result = store.getLiabilityWaiverPathForRequestor(Number(req.params.id));
+    if (!result) {
+      return res.status(404).json({ error: 'Requestor not found.' });
+    }
+    return res.download(result.path, `liability-waiver-${result.requestor.Requestor_ID}${path.extname(result.path)}`);
+  } catch (err) {
+    return res.status(404).json({ error: err.message });
+  }
+});
+
+router.post('/admin/liability-waivers/:id/approve', requireAuth, requireAdmin, (req, res) => {
+  try {
+    const date = req.body?.date || new Date().toISOString().slice(0, 10);
+    const updated = store.approveLiabilityWaiver(Number(req.params.id), date);
+    if (!updated) {
+      return res.status(404).json({ error: 'Requestor not found.' });
+    }
+    return res.json({ ok: true, requestor: updated });
+  } catch (err) {
+    return res.status(400).json({ error: err.message });
+  }
+});
+
+router.put('/admin/volunteers/:id/private-comments', requireAuth, requireAdmin, (req, res) => {
+  const updated = store.updatePrivateComments(Number(req.params.id), String(req.body?.private_comments || ''));
+  if (!updated) {
+    return res.status(404).json({ error: 'Requestor not found.' });
+  }
+  return res.json({ ok: true, requestor: updated });
+});
+
+router.post('/admin/volunteers/:id/approve-waiver', requireAuth, requireAdmin, (req, res) => {
+  try {
+    const date = req.body?.date || new Date().toISOString().slice(0, 10);
+    const updated = store.approveLiabilityWaiver(Number(req.params.id), date);
+    if (!updated) {
+      return res.status(404).json({ error: 'Requestor not found.' });
+    }
+    return res.json({ ok: true, requestor: updated });
+  } catch (err) {
+    return res.status(400).json({ error: err.message });
+  }
+});
+
+router.put('/admin/volunteers/:id/work-party-accepted-status', requireAuth, requireAdmin, (req, res) => {
+  try {
+    const updated = store.updateWorkPartyAcceptedStatus(Number(req.params.id), {
+      workPartyKey: req.body?.workPartyKey,
+      friday_check_in: req.body?.Friday_check_in || req.body?.friday_check_in,
+      hut: req.body?.Hut || req.body?.hut,
+    }, req.body?.status);
+    return res.json({ ok: true, workPartyRequest: updated });
+  } catch (err) {
+    return res.status(400).json({ error: err.message });
+  }
+});
+
+router.put('/admin/volunteers/:id/work-party-attendance-status', requireAuth, requireAdmin, (req, res) => {
+  try {
+    const updated = store.updateWorkPartyAttendanceStatus(Number(req.params.id), {
+      workPartyKey: req.body?.workPartyKey,
+      friday_check_in: req.body?.Friday_check_in || req.body?.friday_check_in,
+      hut: req.body?.Hut || req.body?.hut,
+    }, req.body?.status);
+    return res.json({ ok: true, workPartyRequest: updated });
+  } catch (err) {
+    return res.status(400).json({ error: err.message });
+  }
 });
 
 router.get('/admin/download/requestors', requireAuth, requireAdmin, (req, res) => {

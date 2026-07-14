@@ -1,5 +1,5 @@
 const { HUTS, HUT_CAPACITY } = require('../config');
-const { dateRangeNights, toIsoDate } = require('./dates');
+const { dateRangeNights, toIsoDate, winterSeasonBoundsForDate } = require('./dates');
 
 function hutsForRequest(r) {
   return HUTS.filter((h) => Boolean(r[h]));
@@ -22,9 +22,8 @@ function validateRequest(input) {
   if (departureDate.getTime() - arrivalDate.getTime() > maxTripMs) {
     return 'Trip length must be 5 days or fewer.';
   }
-  const seasonStart = new Date(Date.UTC(arrivalDate.getUTCFullYear(), 11, 15));
-  const seasonEnd = new Date(Date.UTC(arrivalDate.getUTCFullYear() + 1, 3, 30, 23, 59, 59, 999));
-  if (arrivalDate < seasonStart || departureDate > seasonEnd) {
+  const season = winterSeasonBoundsForDate(arrivalDate);
+  if (!season || arrivalDate < season.start || departureDate > season.end) {
     return 'Arrival and departure must be between Dec 15 and Apr 30 of the current season.';
   }
 
@@ -43,6 +42,45 @@ function validateRequest(input) {
 
   if (!Number.isInteger(Number(input.Choice_Number)) || Number(input.Choice_Number) < 1) {
     return 'Choice number must be an integer >= 1.';
+  }
+
+  return null;
+}
+
+function validateRequestSet(requests = []) {
+  for (const request of requests) {
+    const error = validateRequest(request);
+    if (error) return error;
+  }
+
+  const groups = new Map();
+  for (const request of requests) {
+    if (!request.Client_combo_group) continue;
+    if (!groups.has(request.Client_combo_group)) groups.set(request.Client_combo_group, []);
+    groups.get(request.Client_combo_group).push(request);
+  }
+
+  for (const groupRows of groups.values()) {
+    if (groupRows.length !== 2) {
+      return 'Combination trips must save exactly two linked rows.';
+    }
+    const rows = groupRows.slice().sort((a, b) => String(a.Arrival).localeCompare(String(b.Arrival)));
+    const [first, second] = rows;
+    if (Number(first.Choice_Number) !== Number(second.Choice_Number)) {
+      return 'Combination trip rows must use the same choice number.';
+    }
+    if (String(first.Departure) !== String(second.Arrival)) {
+      return 'Combination trip rows must have contiguous dates.';
+    }
+    const firstHuts = hutsForRequest(first);
+    const secondHuts = hutsForRequest(second);
+    if (firstHuts.length !== 1 || secondHuts.length !== 1) {
+      return 'Combination trip rows must each select exactly one hut.';
+    }
+    const route = `${firstHuts[0]}->${secondHuts[0]}`;
+    if (route !== 'Benson->Bradley' && route !== 'Bradley->Benson') {
+      return 'Combination trips must be Benson-to-Bradley or Bradley-to-Benson.';
+    }
   }
 
   return null;
@@ -114,6 +152,7 @@ function summarizeByChoice(requests, choiceNumber, excludeRequestorId, requestor
 
 module.exports = {
   validateRequest,
+  validateRequestSet,
   summarizeByChoice,
   hutsForRequest,
 };

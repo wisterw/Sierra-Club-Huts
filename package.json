@@ -15,6 +15,10 @@
     "test:profile": "node scripts/profileAccessTest.js",
     "test:trip-request": "node scripts/tripRequestVerificationTest.js",
     "test:work-party": "node scripts/workPartySignupTest.js",
+    "test:admin-console": "node scripts/adminConsoleOrganizationTest.js",
+    "test:admin-volunteers": "node scripts/adminVolunteerManagementTest.js",
+    "test:admin-work-parties": "node scripts/adminWorkPartyManagementTest.js",
+    "test:liability-waivers": "node scripts/liabilityWaiverReviewTest.js",
     "test:smoke": "node scripts/browserSmokeTest.js"
   },
   "dependencies": {

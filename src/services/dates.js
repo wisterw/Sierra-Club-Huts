@@ -36,8 +36,22 @@ function closestSaturdayWeekKey(arrival, departure) {
   return chosen.toISOString().slice(0, 10);
 }
 
+function winterSeasonBoundsForDate(dateLike) {
+  const d = new Date(dateLike);
+  if (Number.isNaN(d.getTime())) {
+    return null;
+  }
+  const month = d.getUTCMonth();
+  const startYear = month >= 11 ? d.getUTCFullYear() : d.getUTCFullYear() - 1;
+  return {
+    start: new Date(Date.UTC(startYear, 11, 15)),
+    end: new Date(Date.UTC(startYear + 1, 3, 30, 23, 59, 59, 999)),
+  };
+}
+
 module.exports = {
   toIsoDate,
   dateRangeNights,
   closestSaturdayWeekKey,
+  winterSeasonBoundsForDate,
 };
