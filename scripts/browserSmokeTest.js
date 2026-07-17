@@ -127,7 +127,47 @@ async function run() {
     store.saveWorkPartyInterests(volunteer.Requestor_ID, [
       { Friday_check_in: '2026-08-14', Hut: 'Benson', Interest: 'please consider me', Confirmation_status: 'pending' },
     ]);
+    store.replaceRequestsForRequestor(volunteer.Requestor_ID, [{
+      Requestor_ID: volunteer.Requestor_ID,
+      Benson: false,
+      Bradley: true,
+      Grubb: false,
+      Ludlow: false,
+      Arrival: '2026-12-27',
+      Departure: '2026-12-29',
+      Choice_Number: 1,
+      Spots_ideal: 3,
+      Spots_min: 2,
+      Status: 'requested',
+    }]);
     store.close();
+
+    const volunteerProfile = await (await fetch(`${base}/requestor/${volunteer.Requestor_ID}`, { headers: authHeaders })).json();
+    assert.strictEqual(volunteerProfile.Requestor_ID, volunteer.Requestor_ID, 'admin profile should target the selected requestor');
+    assert.strictEqual(volunteerProfile.workPartyHistory.length, 1, 'admin target profile should include pending work-party history');
+    assert.strictEqual(volunteerProfile.workPartyHistory[0].Hut, 'Benson');
+    assert.strictEqual(volunteerProfile.requests.length, 1, 'admin target profile should include ski-trip requests');
+    assert.strictEqual(volunteerProfile.requests[0].Bradley, true);
+
+    await fetch(`${base}/send-email`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ email: volunteer.Email }),
+    });
+    const volunteerReader = new SqliteStore({ dbPath, importTsv: false });
+    const volunteerLoginCode = volunteerReader.getRequestorById(volunteer.Requestor_ID, { includePrivate: true }).login_code;
+    volunteerReader.close();
+    const volunteerLogin = await fetch(`${base}/check-login`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ email: volunteer.Email, code: volunteerLoginCode }),
+    });
+    assert(volunteerLogin.ok, 'volunteer login should succeed');
+    const volunteerCookie = (volunteerLogin.headers.get('set-cookie') || '').split(';')[0];
+    const forbiddenProfile = await fetch(`${base}/requestor/${me.Requestor_ID}`, {
+      headers: { 'Content-Type': 'application/json', Cookie: volunteerCookie },
+    });
+    assert.strictEqual(forbiddenProfile.status, 403, 'non-admin must not read another requestor profile history');
 
     res = await fetch(`${base}/mode`, {
       method: 'PUT',
@@ -197,6 +237,24 @@ async function run() {
     const volunteersRes = await (await fetch(`${base}/admin/volunteers?workPartyKey=2026-08-14%7CBenson&acceptedStatus=pending`, { headers: authHeaders })).json();
     assert(Array.isArray(volunteersRes.rows), 'volunteer grid should return rows');
     assert(volunteersRes.rows.some((row) => row.Requestor_ID === volunteer.Requestor_ID), 'volunteer grid should include pending applicant');
+
+    res = await fetch(`${base}/admin/upload-requestors/sample`, { headers: authHeaders });
+    assert(res.ok, 'requestor upload sample should download');
+    assert.strictEqual(await res.text(), 'Email\tfirst_name\tlast_name\taddress\tcity\tstate\tzip\tPhone\n');
+
+    const requestorFd = new FormData();
+    requestorFd.append('file', new Blob([
+      'EMAIL\tfirst_name\tcity\nBULK.SMOKE@EXAMPLE.COM\tBulk Volunteer\tTahoe City\n',
+    ], { type: 'text/tab-separated-values' }), 'requestors.tsv');
+    res = await fetch(`${base}/admin/upload-requestors`, {
+      method: 'POST',
+      headers: { Cookie: cookie },
+      body: requestorFd,
+    });
+    assert(res.ok, 'bulk requestor upload should succeed');
+    assert.deepStrictEqual(await res.json(), { ok: true, created: 1, updated: 0, skipped: 0 });
+    const refreshedVolunteers = await (await fetch(`${base}/admin/volunteers`, { headers: authHeaders })).json();
+    assert(refreshedVolunteers.rows.some((row) => row.Email === 'BULK.SMOKE@EXAMPLE.COM'), 'uploaded volunteer should appear after grid refresh');
 
     res = await fetch(`${base}/admin/volunteers/${volunteer.Requestor_ID}/private-comments`, {
       method: 'PUT',

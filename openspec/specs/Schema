@@ -10,7 +10,6 @@ We will use a lightweight relational database for our persistence store.  The ta
 * state (string).  US state.
 * zip (string).  ZIP code.
 * Phone (string).  Backup communication method.   May be null.  
-* Comments (string).  May be null.  
 * Credits (integer).  Required.  Users with more credits are higher priority and will get to choose first.  
 * login_code (integer).  May be null if never logged in.
 * code_generated_when (Datetime).  may be null.  For code expiry, when did we send their email code most recently.  

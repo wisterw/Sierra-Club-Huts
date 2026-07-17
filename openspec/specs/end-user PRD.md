@@ -130,7 +130,6 @@ The Profile tab is the third tab.  The Profile tab is always available and shows
 * State (mutable)  
 * ZIP (mutable)  
 * Phone (mutable)  
-* Comments (mutable)  
 * I am an experienced chainsaw user (mutable, checkbox)
 * I own a chainsaw and know how to tune it (mutable, checkbox)
 * Is\_an\_admin flag (mutable for admins only; immutable for non-admins)  

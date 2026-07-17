@@ -28,6 +28,17 @@ async function waitFor(url) {
 }
 
 function runStoreAssertions() {
+  const appSource = fs.readFileSync(path.resolve(__dirname, '../public/js/app.js'), 'utf8');
+  const stylesSource = fs.readFileSync(path.resolve(__dirname, '../public/css/styles.css'), 'utf8');
+  assert(appSource.includes('id="volunteer-upload-form"'));
+  assert(appSource.includes('Bulk add/update volunteers'));
+  assert(appSource.includes('/api/admin/upload-requestors/sample'));
+  assert(appSource.includes('Blank cells preserve existing values.'));
+  assert(appSource.includes("await api('/admin/upload-requestors', { method: 'POST', body: formData })"));
+  assert(appSource.includes('await loadVolunteerManagement();\n      renderAdmin();'));
+  assert(appSource.includes('Upload complete: ${result.created} created, ${result.updated} updated, ${result.skipped} skipped.'));
+  assert(stylesSource.includes('.volunteer-upload-form'));
+
   const dbPath = makeTempDb();
   const waiverStorageDir = path.join(path.dirname(dbPath), 'waivers');
   const store = new SqliteStore({ dbPath, waiverStorageDir, importTsv: false });
@@ -123,6 +134,22 @@ function runStoreAssertions() {
   );
 
   store.close();
+
+  const rollbackStore = new SqliteStore({ dbPath: makeTempDb('sierra-club-huts-import-rollback-'), importTsv: false });
+  const originalUpsert = rollbackStore.upsertRequestor.bind(rollbackStore);
+  rollbackStore.upsertRequestor = (partial) => {
+    if (partial.Email === 'FAIL@EXAMPLE.COM') throw new Error('forced persistence failure');
+    return originalUpsert(partial);
+  };
+  assert.throws(
+    () => rollbackStore.bulkUpsertRequestors([
+      { Email: 'FIRST@EXAMPLE.COM', first_name: 'Must roll back' },
+      { Email: 'FAIL@EXAMPLE.COM' },
+    ]),
+    /forced persistence failure/
+  );
+  assert.strictEqual(rollbackStore.getRequestorByEmail('FIRST@EXAMPLE.COM'), null, 'bulk import must roll back earlier rows');
+  rollbackStore.close();
   return { adminEmail: admin.Email };
 }
 
@@ -141,7 +168,13 @@ async function runApiAuthorizationAssertions() {
     const base = `http://127.0.0.1:${port}/api`;
     const store = new SqliteStore({ dbPath, importTsv: false });
     const admin = store.upsertRequestor({ Email: 'ADMIN.API@EXAMPLE.COM', Admin: true });
-    const user = store.upsertRequestor({ Email: 'USER.API@EXAMPLE.COM', Admin: false });
+    const user = store.upsertRequestor({
+      Email: 'USER.API@EXAMPLE.COM',
+      Admin: false,
+      first_name: 'Original',
+      city: 'Truckee',
+      Phone: 'old phone',
+    });
     store.upsertWorkParty({
       Friday_check_in: '2026-08-14',
       Hut: 'Benson',
@@ -178,6 +211,18 @@ async function runApiAuthorizationAssertions() {
     });
     assert.strictEqual(res.status, 403, 'non-admin volunteer grid read should be rejected');
 
+    res = await fetch(`${base}/admin/upload-requestors/sample`, { headers: { Cookie: userCookie } });
+    assert.strictEqual(res.status, 403, 'non-admin sample download should be rejected');
+
+    let form = new FormData();
+    form.append('file', new Blob(['Email\nblocked@example.com\n'], { type: 'text/tab-separated-values' }), 'blocked.tsv');
+    res = await fetch(`${base}/admin/upload-requestors`, {
+      method: 'POST',
+      headers: { Cookie: userCookie },
+      body: form,
+    });
+    assert.strictEqual(res.status, 403, 'non-admin requestor upload should be rejected');
+
     res = await fetch(`${base}/admin/volunteers/${user.Requestor_ID}/private-comments`, {
       method: 'PUT',
       headers: { 'Content-Type': 'application/json', Cookie: userCookie },
@@ -193,6 +238,58 @@ async function runApiAuthorizationAssertions() {
     const payload = await res.json();
     const benson = payload.filters.workParties.find((row) => row.Hut === 'Benson');
     assert(benson, 'expected work party filter option');
+
+    res = await fetch(`${base}/admin/upload-requestors/sample`, { headers: { Cookie: adminCookie } });
+    assert(res.ok, 'admin sample download should succeed');
+    assert((res.headers.get('content-type') || '').includes('tab-separated-values'));
+    assert((res.headers.get('content-disposition') || '').includes('requestors-sample.tsv'));
+    assert.strictEqual(
+      await res.text(),
+      'Email\tfirst_name\tlast_name\taddress\tcity\tstate\tzip\tPhone\n'
+    );
+
+    form = new FormData();
+    form.append('file', new Blob(['first_name\nNo email header\n'], { type: 'text/tab-separated-values' }), 'missing-header.tsv');
+    res = await fetch(`${base}/admin/upload-requestors`, {
+      method: 'POST', headers: { Cookie: adminCookie }, body: form,
+    });
+    assert.strictEqual(res.status, 400, 'missing Email header should reject upload');
+
+    form = new FormData();
+    form.append('file', new Blob([
+      'Email\tfirst_name\nWOULD.CREATE@EXAMPLE.COM\tNope\n\tMissing email\n',
+    ], { type: 'text/tab-separated-values' }), 'missing-row-email.tsv');
+    res = await fetch(`${base}/admin/upload-requestors`, {
+      method: 'POST', headers: { Cookie: adminCookie }, body: form,
+    });
+    assert.strictEqual(res.status, 400, 'row without email should reject entire upload');
+    let reader = new SqliteStore({ dbPath, importTsv: false });
+    assert.strictEqual(reader.getRequestorByEmail('WOULD.CREATE@EXAMPLE.COM'), null, 'validation failure must make no changes');
+    reader.close();
+
+    form = new FormData();
+    form.append('file', new Blob([
+      ' email \t FIRST_NAME \tCITY\tUnknown extra\tPhone\n',
+      ' user.api@example.com \t Updated  Name \t   \t ignored \t 555  1212 \n',
+      '   \n',
+      ' NEW.API@EXAMPLE.COM \t Mary Jane \t South Lake  Tahoe \t ignored \t   \n',
+    ], { type: 'text/tab-separated-values' }), 'volunteers.tsv');
+    res = await fetch(`${base}/admin/upload-requestors`, {
+      method: 'POST', headers: { Cookie: adminCookie }, body: form,
+    });
+    assert(res.ok, 'valid requestor upload should succeed');
+    assert.deepStrictEqual(await res.json(), { ok: true, created: 1, updated: 1, skipped: 1 });
+
+    reader = new SqliteStore({ dbPath, importTsv: false });
+    const importedExisting = reader.getRequestorByEmail('USER.API@EXAMPLE.COM', { includePrivate: true });
+    assert.strictEqual(importedExisting.first_name, 'Updated  Name', 'internal spaces must be preserved');
+    assert.strictEqual(importedExisting.city, 'Truckee', 'blank cell must preserve existing value');
+    assert.strictEqual(importedExisting.Phone, '555  1212', 'surrounding whitespace should be trimmed');
+    const importedNew = reader.getRequestorByEmail('new.api@example.com', { includePrivate: true });
+    assert.strictEqual(importedNew.first_name, 'Mary Jane');
+    assert.strictEqual(importedNew.city, 'South Lake  Tahoe');
+    assert.strictEqual(importedNew.Phone, '', 'optional omitted value should use default');
+    reader.close();
 
     res = await fetch(`${base}/admin/volunteers/${user.Requestor_ID}/work-party-accepted-status`, {
       method: 'PUT',

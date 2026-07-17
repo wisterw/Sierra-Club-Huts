@@ -606,6 +606,19 @@ class SqliteStore {
     return this.getRequestorByEmail(normalizedEmail, { includePrivate: true });
   }
 
+  bulkUpsertRequestors(rows = [], options = {}) {
+    return this.runTransaction(() => {
+      let created = 0;
+      let updated = 0;
+      for (const partial of rows) {
+        if (this.getRequestorByEmail(partial.Email, { includePrivate: true })) updated += 1;
+        else created += 1;
+        this.upsertRequestor(partial);
+      }
+      return { created, updated, skipped: Number(options.skipped || 0) };
+    });
+  }
+
   nextRequestorId() {
     const used = new Set(this.db.prepare('SELECT requestor_id FROM requestors').all().map((r) => Number(r.requestor_id)));
     let id = 1000 + Math.floor(Math.random() * 900000);
@@ -620,7 +633,7 @@ class SqliteStore {
     if (!existing) return null;
     const allowed = new Set([
       'first_name', 'last_name', 'address', 'city', 'state', 'zip',
-      'Phone', 'Comments', 'has_a_chainsaw', 'chainsaw_user', 'other_skills',
+      'Phone', 'has_a_chainsaw', 'chainsaw_user', 'other_skills',
     ]);
     if (options.allowAdminFields) {
       [
@@ -820,6 +833,44 @@ class SqliteStore {
       Confirmation_status: cleanWorkPartyAcceptedStatus(row.confirmation_status),
       Attendance_status: cleanWorkPartyAttendanceStatus(row.attendance_status),
       Availability: row.availability || 'open',
+    }));
+  }
+
+  getProfileWorkPartyHistory(requestorId, today = new Date().toISOString().slice(0, 10)) {
+    return this.db.prepare(`
+      SELECT
+        wpr.friday_check_in,
+        wpr.hut,
+        wpr.interest,
+        wpr.confirmation_status,
+        wpr.attendance_status,
+        wpr.added_date,
+        wp.sunday_check_out,
+        wp.leader
+      FROM work_party_requests wpr
+      LEFT JOIN work_parties wp
+        ON wp.friday_check_in = wpr.friday_check_in
+       AND wp.hut = wpr.hut
+      WHERE wpr.requestor_id = ?
+        AND (
+          wpr.friday_check_in < ?
+          OR lower(trim(COALESCE(wpr.confirmation_status, ''))) IN ('', 'pending', 'requested')
+        )
+      ORDER BY
+        CASE WHEN wpr.friday_check_in >= ? THEN 0 ELSE 1 END,
+        CASE WHEN wpr.friday_check_in >= ? THEN wpr.friday_check_in END ASC,
+        CASE WHEN wpr.friday_check_in < ? THEN wpr.friday_check_in END DESC,
+        wpr.hut ASC
+    `).all(Number(requestorId), today, today, today, today).map((row) => ({
+      Friday_check_in: row.friday_check_in,
+      Sunday_check_out: row.sunday_check_out || '',
+      Hut: row.hut,
+      Interest: row.interest || '',
+      Accepted_status: cleanWorkPartyAcceptedStatus(row.confirmation_status),
+      Attendance_status: cleanWorkPartyAttendanceStatus(row.attendance_status),
+      Added_date: row.added_date || '',
+      Leader: row.leader || '',
+      key: workPartyKey(row.friday_check_in, row.hut),
     }));
   }
 

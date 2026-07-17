@@ -19,6 +19,9 @@ const { assignLotteryValues, runAssignment, efficiencyReport, requestsJoinedRepo
 const upload = multer();
 const WAIVER_UPLOAD_MAX_BYTES = 10 * 1024 * 1024;
 const WAIVER_UPLOAD_MIME_TYPES = new Set(['application/pdf', 'image/jpeg', 'image/png']);
+const REQUESTOR_UPLOAD_MAX_BYTES = 2 * 1024 * 1024;
+const requestorUpload = multer({ limits: { fileSize: REQUESTOR_UPLOAD_MAX_BYTES } });
+const REQUESTOR_SAMPLE_HEADERS = ['Email', 'first_name', 'last_name', 'address', 'city', 'state', 'zip', 'Phone'];
 const router = express.Router();
 const store = new SqliteStore();
 const AUTH_FAILURE_MESSAGE = 'Login failure, please try again later or contact the hut administrator.';
@@ -60,6 +63,7 @@ function requestorPayload(requestor, options = {}) {
   const payload = {
     ...requestor,
     requests: store.getRequestsByRequestorId(requestor.Requestor_ID),
+    workPartyHistory: store.getProfileWorkPartyHistory(requestor.Requestor_ID),
     applicationMode: store.getApplicationMode(),
   };
   if (options.includePrivate) {
@@ -78,6 +82,101 @@ function validateWaiverUpload(file) {
   if (file.size > WAIVER_UPLOAD_MAX_BYTES) return 'Uploaded waiver file is too large.';
   if (!WAIVER_UPLOAD_MIME_TYPES.has(file.mimetype)) return 'Unsupported waiver file type.';
   return null;
+}
+
+const REQUESTOR_UPLOAD_COLUMNS = new Map([
+  ['email', { key: 'Email' }],
+  ['name', { key: 'Name' }],
+  ['first_name', { key: 'first_name' }],
+  ['last_name', { key: 'last_name' }],
+  ['address', { key: 'address' }],
+  ['city', { key: 'city' }],
+  ['state', { key: 'state' }],
+  ['zip', { key: 'zip' }],
+  ['phone', { key: 'Phone' }],
+  ['comments', { key: 'Comments' }],
+  ['credits', { key: 'Credits', type: 'number' }],
+  ['admin', { key: 'Admin', type: 'boolean' }],
+  ['login_code', { key: 'login_code', type: 'number' }],
+  ['code_generated_when', { key: 'code_generated_when' }],
+  ['email_code_sent', { key: 'code_generated_when' }],
+  ['last_failed_login', { key: 'last_failed_login' }],
+  ['years_of_service', { key: 'years_of_service' }],
+  ['years of service', { key: 'years_of_service' }],
+  ['has_a_chainsaw', { key: 'has_a_chainsaw', type: 'boolean' }],
+  ['chainsaw_user', { key: 'chainsaw_user', type: 'boolean' }],
+  ['other_skills', { key: 'other_skills' }],
+  ['private_comments', { key: 'private_comments' }],
+  ['private comments', { key: 'private_comments' }],
+  ['liability_waiver_date', { key: 'liability_waiver_date' }],
+]);
+
+function normalizedUploadHeader(value) {
+  return String(value || '').replace(/^\uFEFF/, '').trim().toLowerCase();
+}
+
+function splitUploadedName(value) {
+  const parts = String(value || '').trim().split(/\s+/).filter(Boolean);
+  return { first_name: parts.shift() || '', last_name: parts.join(' ') };
+}
+
+function parseRequestorUpload(raw) {
+  const lines = String(raw || '').replace(/\r?\n$/, '').split(/\r?\n/);
+  if (!lines[0]?.trim()) throw new Error('TSV must include a header row.');
+  const headers = lines[0].split('\t').map(normalizedUploadHeader);
+  const emailIndex = headers.indexOf('email');
+  if (emailIndex < 0) throw new Error('TSV must include Email header.');
+
+  const rows = [];
+  let skipped = 0;
+  for (let lineIndex = 1; lineIndex < lines.length; lineIndex += 1) {
+    const line = lines[lineIndex];
+    if (!line.trim()) {
+      skipped += 1;
+      continue;
+    }
+    const cells = line.split('\t').map((value) => value.trim());
+    const email = cells[emailIndex] || '';
+    if (!email) throw new Error(`TSV row ${lineIndex + 1} must include an email.`);
+    const partial = { Email: email };
+
+    for (let columnIndex = 0; columnIndex < headers.length; columnIndex += 1) {
+      const descriptor = REQUESTOR_UPLOAD_COLUMNS.get(headers[columnIndex]);
+      const value = cells[columnIndex] || '';
+      if (!descriptor || !value || descriptor.key === 'Email') continue;
+      if (descriptor.type === 'number') {
+        const number = Number(value);
+        if (!Number.isFinite(number)) {
+          throw new Error(`TSV row ${lineIndex + 1} has an invalid number for ${headers[columnIndex]}.`);
+        }
+        partial[descriptor.key] = number;
+      } else if (descriptor.type === 'boolean') {
+        partial[descriptor.key] = toBoolean(value);
+      } else {
+        partial[descriptor.key] = value;
+      }
+    }
+
+    if (partial.Name) {
+      const fallback = splitUploadedName(partial.Name);
+      if (!partial.first_name && fallback.first_name) partial.first_name = fallback.first_name;
+      if (!partial.last_name && fallback.last_name) partial.last_name = fallback.last_name;
+      delete partial.Name;
+    }
+    rows.push(partial);
+  }
+  if (!rows.length) throw new Error('TSV file has no data rows.');
+  return { rows, skipped };
+}
+
+function receiveRequestorUpload(req, res, next) {
+  requestorUpload.single('file')(req, res, (err) => {
+    if (err?.code === 'LIMIT_FILE_SIZE') {
+      return res.status(400).json({ error: 'TSV file is too large.' });
+    }
+    if (err) return res.status(400).json({ error: err.message });
+    return next();
+  });
 }
 
 router.post('/send-email', async (req, res) => {
@@ -235,7 +334,6 @@ router.put('/requestor/:id', requireAuth, (req, res) => {
     state: req.body.state,
     zip: req.body.zip,
     Phone: req.body.Phone,
-    Comments: req.body.Comments,
     has_a_chainsaw: req.body.has_a_chainsaw,
     chainsaw_user: req.body.chainsaw_user,
     other_skills: req.body.other_skills,
@@ -387,67 +485,23 @@ router.post('/liability-waiver', requireAuth, upload.single('file'), (req, res) 
   }
 });
 
-router.post('/admin/upload-requestors', requireAuth, requireAdmin, upload.single('file'), (req, res) => {
+router.get('/admin/upload-requestors/sample', requireAuth, requireAdmin, (_req, res) => {
+  res.type('text/tab-separated-values');
+  res.setHeader('Content-Disposition', 'attachment; filename="requestors-sample.tsv"');
+  return res.send(`${REQUESTOR_SAMPLE_HEADERS.join('\t')}\n`);
+});
+
+router.post('/admin/upload-requestors', requireAuth, requireAdmin, receiveRequestorUpload, (req, res) => {
   if (!req.file) {
     return res.status(400).json({ error: 'Missing file upload.' });
   }
-
-  const raw = req.file.buffer.toString('utf8');
-  const lines = raw.split(/\r?\n/).filter((l) => l.length > 0);
-  if (lines.length < 2) {
-    return res.status(400).json({ error: 'TSV file has no data rows.' });
+  try {
+    const parsed = parseRequestorUpload(req.file.buffer.toString('utf8'));
+    const summary = store.bulkUpsertRequestors(parsed.rows, { skipped: parsed.skipped });
+    return res.json({ ok: true, ...summary });
+  } catch (err) {
+    return res.status(400).json({ error: err.message });
   }
-
-  const headers = lines[0].split('\t');
-  const idx = (h) => headers.findIndex((x) => x === h);
-  const cell = (cells, header) => {
-    const i = idx(header);
-    return i >= 0 ? cells[i] : '';
-  };
-  const splitName = (name) => {
-    const cleaned = String(name || '').trim();
-    if (!cleaned) return { first: '', last: '' };
-    const parts = cleaned.split(/\s+/, 2);
-    return { first: parts[0] || '', last: parts[1] || '' };
-  };
-  const iEmail = idx('Email');
-  if (iEmail < 0) {
-    return res.status(400).json({ error: 'TSV must include Email header.' });
-  }
-
-  let createdOrUpdated = 0;
-  for (const line of lines.slice(1)) {
-    const cells = line.split('\t');
-    const email = cells[iEmail];
-    if (!email) continue;
-    const fallbackName = splitName(cell(cells, 'Name'));
-
-    store.upsertRequestor({
-      Email: email,
-      first_name: cell(cells, 'first_name') || fallbackName.first,
-      last_name: cell(cells, 'last_name') || fallbackName.last,
-      address: cell(cells, 'address'),
-      city: cell(cells, 'city'),
-      state: cell(cells, 'state'),
-      zip: cell(cells, 'zip'),
-      Phone: cell(cells, 'Phone'),
-      Comments: cell(cells, 'Comments'),
-      Credits: Number(cell(cells, 'Credits') || 0),
-      Admin: toBoolean(cell(cells, 'Admin')),
-      login_code: cell(cells, 'login_code'),
-      code_generated_when: cell(cells, 'code_generated_when') || cell(cells, 'Email_code_sent'),
-      last_failed_login: cell(cells, 'last_failed_login'),
-      years_of_service: cell(cells, 'years_of_service') || cell(cells, 'years of service'),
-      has_a_chainsaw: toBoolean(cell(cells, 'has_a_chainsaw')),
-      chainsaw_user: toBoolean(cell(cells, 'chainsaw_user')),
-      other_skills: cell(cells, 'other_skills'),
-      private_comments: cell(cells, 'private_comments') || cell(cells, 'private comments'),
-      liability_waiver_date: cell(cells, 'liability_waiver_date'),
-    });
-    createdOrUpdated += 1;
-  }
-
-  return res.json({ ok: true, createdOrUpdated });
 });
 
 router.get('/admin/volunteers', requireAuth, requireAdmin, (req, res) => {

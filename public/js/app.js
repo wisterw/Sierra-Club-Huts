@@ -14,6 +14,7 @@ const state = {
   adminSection: 'application-settings',
   profileTarget: null,
   volunteerRows: [],
+  volunteerMessage: '',
   volunteerFilterOptions: {
     workParties: [],
     acceptedStatuses: ['', 'pending', 'accepted', 'waitlisted'],
@@ -95,6 +96,72 @@ function escapeHtml(value) {
     .replace(/>/g, '&gt;')
     .replace(/"/g, '&quot;')
     .replace(/'/g, '&#39;');
+}
+
+function profileHelpControl(id, label, text) {
+  return `
+    <span class="contextual-help">
+      <button type="button" class="info-icon info-trigger" aria-label="Help for ${escapeHtml(label)}" aria-describedby="${id}" aria-controls="${id}" aria-expanded="false">i</button>
+      <span class="info-tooltip" id="${id}" role="tooltip" hidden>${escapeHtml(text)}</span>
+    </span>
+  `;
+}
+
+function setContextualHelpOpen(trigger, open, pinned = false) {
+  const tooltip = document.getElementById(trigger.getAttribute('aria-controls'));
+  if (!tooltip) return;
+  trigger.setAttribute('aria-expanded', String(open));
+  trigger.dataset.pinned = pinned ? 'true' : 'false';
+  tooltip.hidden = !open;
+}
+
+function closeUnpinnedContextualHelp(trigger) {
+  if (trigger.dataset.pinned === 'true' || document.activeElement === trigger || trigger.matches(':hover')) return;
+  setContextualHelpOpen(trigger, false);
+}
+
+function wireContextualHelp() {
+  document.addEventListener('pointerover', (event) => {
+    const trigger = event.target.closest('.info-trigger');
+    if (trigger) setContextualHelpOpen(trigger, true, trigger.dataset.pinned === 'true');
+  });
+
+  document.addEventListener('pointerout', (event) => {
+    const trigger = event.target.closest('.info-trigger');
+    if (trigger && !trigger.closest('.contextual-help').contains(event.relatedTarget)) {
+      closeUnpinnedContextualHelp(trigger);
+    }
+  });
+
+  document.addEventListener('focusin', (event) => {
+    const trigger = event.target.closest('.info-trigger');
+    if (trigger) setContextualHelpOpen(trigger, true, trigger.dataset.pinned === 'true');
+  });
+
+  document.addEventListener('focusout', (event) => {
+    const trigger = event.target.closest('.info-trigger');
+    if (trigger) setTimeout(() => closeUnpinnedContextualHelp(trigger), 0);
+  });
+
+  document.addEventListener('click', (event) => {
+    const trigger = event.target.closest('.info-trigger');
+    document.querySelectorAll('.info-trigger[data-pinned="true"]').forEach((other) => {
+      if (other !== trigger) setContextualHelpOpen(other, false);
+    });
+    if (!trigger) return;
+    event.preventDefault();
+    event.stopPropagation();
+    const pinned = trigger.dataset.pinned !== 'true';
+    setContextualHelpOpen(trigger, pinned, pinned);
+  });
+
+  document.addEventListener('keydown', (event) => {
+    if (event.key !== 'Escape') return;
+    const trigger = event.target.closest('.info-trigger');
+    if (!trigger) return;
+    setContextualHelpOpen(trigger, false);
+    trigger.focus();
+  });
 }
 
 function currentSeasonDates() {
@@ -407,6 +474,50 @@ function renderSession() {
   });
 }
 
+function renderProfileWorkPartyHistory(rows = []) {
+  if (!rows.length) {
+    return '<p class="profile-history-empty">No past or pending work parties.</p>';
+  }
+  return `
+    <div class="profile-history-table-wrap">
+      <table class="profile-history-table">
+        <thead><tr><th scope="col">Work party</th><th scope="col">Interest</th><th scope="col">Accepted</th><th scope="col">Attendance</th><th scope="col">Leader</th></tr></thead>
+        <tbody>${rows.map((row) => `
+          <tr>
+            <td><strong>${escapeHtml(row.Hut || '')}</strong><br/><span>${escapeHtml(row.Friday_check_in || '')}${row.Sunday_check_out ? ` to ${escapeHtml(row.Sunday_check_out)}` : ''}</span></td>
+            <td>${escapeHtml(row.Interest || '—')}</td>
+            <td>${escapeHtml(row.Accepted_status || 'pending')}</td>
+            <td>${escapeHtml(row.Attendance_status || '—')}</td>
+            <td>${escapeHtml(row.Leader || '—')}</td>
+          </tr>`).join('')}</tbody>
+      </table>
+    </div>`;
+}
+
+function renderProfileTripRequests(requests = []) {
+  if (!requests.length) {
+    return '<p class="profile-history-empty">No current ski trip reservation requests.</p>';
+  }
+  const ordered = [...requests].sort((a, b) => Number(a.Choice_Number) - Number(b.Choice_Number));
+  return `
+    <div class="profile-history-table-wrap">
+      <table class="profile-history-table profile-trip-request-table">
+        <thead><tr><th scope="col">Choice</th><th scope="col">Hut(s)</th><th scope="col">Dates</th><th scope="col">Spots (min / ideal)</th><th scope="col">Status</th></tr></thead>
+        <tbody>${ordered.map((request) => {
+          const huts = HUTS.filter((hut) => request[hut]).join(', ');
+          return `
+          <tr>
+            <td>${escapeHtml(request.Choice_Number || '')}</td>
+            <td>${escapeHtml(huts || '—')}</td>
+            <td>${escapeHtml(request.Arrival || '—')} to ${escapeHtml(request.Departure || '—')}</td>
+            <td>${escapeHtml(request.Spots_min ?? '—')} / ${escapeHtml(request.Spots_ideal ?? '—')}</td>
+            <td>${escapeHtml(request.Status || 'requested')}</td>
+          </tr>`;
+        }).join('')}</tbody>
+      </table>
+    </div>`;
+}
+
 function renderProfile() {
   if (!state.me) return;
   const isAdmin = Boolean(state.me.Admin);
@@ -424,9 +535,14 @@ function renderProfile() {
       <label>State<input name="state" value="${escapeHtml(profile.state || '')}" /></label>
       <label>ZIP<input name="zip" value="${escapeHtml(profile.zip || '')}" /></label>
       <label>Phone<input name="Phone" value="${escapeHtml(profile.Phone || '')}" /></label>
-      <label>Comments<textarea name="Comments">${escapeHtml(profile.Comments || '')}</textarea></label>
-      <label class="checkbox-option"><input type="checkbox" name="has_a_chainsaw" ${profile.has_a_chainsaw ? 'checked' : ''} /> <span>I am an experienced chainsaw user</span></label>
-      <label class="checkbox-option"><input type="checkbox" name="chainsaw_user" ${profile.chainsaw_user ? 'checked' : ''} /> <span>I own a chainsaw and know how to tune it</span></label>
+      <div class="checkbox-help-row">
+        <label class="checkbox-option"><input type="checkbox" name="has_a_chainsaw" ${profile.has_a_chainsaw ? 'checked' : ''} /> <span>I am an experienced chainsaw user</span></label>
+        ${profileHelpControl('experienced-chainsaw-help', 'experienced chainsaw user', 'Can execute a directional fell without binding')}
+      </div>
+      <div class="checkbox-help-row">
+        <label class="checkbox-option"><input type="checkbox" name="chainsaw_user" ${profile.chainsaw_user ? 'checked' : ''} /> <span>I own a chainsaw and know how to tune it</span></label>
+        ${profileHelpControl('chainsaw-owner-help', 'chainsaw owner and tuner', 'tension, sharpen, lube, adjust carb')}
+      </div>
       <label>Other skills<textarea name="other_skills">${escapeHtml(profile.other_skills || '')}</textarea></label>
       <label>Admin
         <select name="Admin" ${isAdmin ? '' : 'disabled'}>
@@ -435,7 +551,16 @@ function renderProfile() {
         </select>
       </label>
       <label>Credits<input type="number" name="Credits" ${isAdmin ? '' : 'disabled'} value="${profile.Credits}" /></label>
-      <label>Private comments<textarea name="private_comments" ${isAdmin ? '' : 'disabled'}>${escapeHtml(profile.private_comments || '')}</textarea></label>
+      ${isAdmin ? `
+        <div class="field-help-row">
+          <label>Admin-only comments<textarea name="private_comments">${escapeHtml(profile.private_comments || '')}</textarea></label>
+          ${profileHelpControl(
+            'admin-only-comments-help',
+            'admin-only comments',
+            'Comments added here should be matter-of-fact basic but are only visible by other hut leaders and admins. Include here anything that other leaders would find useful regarding this volunteer for future work parties'
+          )}
+        </div>
+      ` : ''}
       <label>Liability waiver date<input type="date" name="liability_waiver_date" ${isAdmin ? '' : 'disabled'} value="${escapeHtml(profile.liability_waiver_date || '')}" /></label>
       <div class="waiver-profile-actions">
         <a href="/api/liability-waiver/blank" target="_blank" rel="noopener">download blank</a>
@@ -445,6 +570,14 @@ function renderProfile() {
       <button type="submit">Save Profile</button>
       <div id="profile-msg"></div>
     </form>
+    <section class="profile-history-section" aria-labelledby="profile-work-party-history-heading">
+      <h3 id="profile-work-party-history-heading">Work party history</h3>
+      ${renderProfileWorkPartyHistory(profile.workPartyHistory || [])}
+    </section>
+    <section class="profile-history-section" aria-labelledby="profile-ski-trip-requests-heading">
+      <h3 id="profile-ski-trip-requests-heading">Current ski trip reservation requests</h3>
+      ${renderProfileTripRequests(profile.requests || [])}
+    </section>
   `;
 
   const returnBtn = document.getElementById('return-own-profile');
@@ -490,7 +623,6 @@ function renderProfile() {
       state: fd.get('state'),
       zip: fd.get('zip'),
       Phone: fd.get('Phone'),
-      Comments: fd.get('Comments'),
       has_a_chainsaw: fd.get('has_a_chainsaw') === 'on',
       chainsaw_user: fd.get('chainsaw_user') === 'on',
       other_skills: fd.get('other_skills'),
@@ -943,6 +1075,15 @@ function renderVolunteerManagement() {
 
   return `
     <div class="volunteer-management">
+      <form id="volunteer-upload-form" class="volunteer-upload-form">
+        <div>
+          <strong>Bulk add/update volunteers</strong>
+          <p>Email is required; all other fields are optional. Blank cells preserve existing values.</p>
+          <a href="/api/admin/upload-requestors/sample">Download sample TSV</a>
+        </div>
+        <label>Volunteer TSV file<input id="volunteer-upload-file" type="file" name="file" accept=".tsv,text/tab-separated-values" required /></label>
+        <button type="submit">Upload volunteers</button>
+      </form>
       <div class="admin-filters">
         <label>Work party accepted status
           <select id="volunteer-accepted-filter">
@@ -975,7 +1116,7 @@ function renderVolunteerManagement() {
           </select>
         </label>
       </div>
-      <div id="volunteer-msg"></div>
+      <div id="volunteer-msg" role="status">${escapeHtml(state.volunteerMessage)}</div>
       <div class="volunteer-table-wrap">
         <table class="volunteer-table">
           <thead>
@@ -993,6 +1134,27 @@ function renderVolunteerManagement() {
 }
 
 function wireVolunteerManagement() {
+  const uploadForm = document.getElementById('volunteer-upload-form');
+  if (uploadForm) uploadForm.addEventListener('submit', async (event) => {
+    event.preventDefault();
+    const msg = document.getElementById('volunteer-msg');
+    const submit = uploadForm.querySelector('button[type="submit"]');
+    const formData = new FormData(uploadForm);
+    submit.disabled = true;
+    state.volunteerMessage = '';
+    msg.textContent = 'Uploading…';
+    try {
+      const result = await api('/admin/upload-requestors', { method: 'POST', body: formData });
+      state.volunteerMessage = `Upload complete: ${result.created} created, ${result.updated} updated, ${result.skipped} skipped.`;
+      await loadVolunteerManagement();
+      renderAdmin();
+    } catch (err) {
+      state.volunteerMessage = err.message;
+      msg.textContent = err.message;
+      submit.disabled = false;
+    }
+  });
+
   const filterMap = [
     ['volunteer-accepted-filter', 'acceptedStatus'],
     ['volunteer-work-party-filter', 'workPartyKey'],
@@ -1553,6 +1715,7 @@ function wireLogin() {
 async function init() {
   wireTabs();
   wireLogin();
+  wireContextualHelp();
 
   try {
     await loadMeAndRender();
