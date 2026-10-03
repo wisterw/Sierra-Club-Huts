@@ -6,3 +6,4 @@ data/*.sqlite
 data/*.sqlite-*
 SierraClubKeyPair.pem
 Docs/credentials.md
+/Washington-DC-Mold
