@@ -19,7 +19,8 @@
     "test:admin-volunteers": "node scripts/adminVolunteerManagementTest.js",
     "test:admin-work-parties": "node scripts/adminWorkPartyManagementTest.js",
     "test:liability-waivers": "node scripts/liabilityWaiverReviewTest.js",
-    "test:smoke": "node scripts/browserSmokeTest.js"
+    "test:smoke": "node scripts/browserSmokeTest.js",
+    "test:standalone": "node scripts/standaloneAppTest.js"
   },
   "dependencies": {
     "express": "^4.22.1",
@@ -36,5 +37,8 @@
   "bugs": {
     "url": "https://github.com/wisterw/Sierra-Club-Huts/issues"
   },
-  "homepage": "https://github.com/wisterw/Sierra-Club-Huts#readme"
+  "homepage": "https://github.com/wisterw/Sierra-Club-Huts#readme",
+  "devDependencies": {
+    "@playwright/test": "^1.63.0"
+  }
 }

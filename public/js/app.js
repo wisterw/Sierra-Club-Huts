@@ -40,6 +40,40 @@ const state = {
   summaryRows: [],
 };
 
+const initialState = structuredClone(state);
+const PAGE_PATHS = {
+  'trip-request': '/trip-requests',
+  'work-party': '/work-parties',
+  profile: '/profile',
+  admin: '/admin',
+};
+let suspendedDraft = null;
+let sessionGeneration = 0;
+
+function showSignIn(message = '', preserveDraft = false) {
+  if (preserveDraft && state.me) {
+    suspendedDraft = {
+      requestorId: state.me.Requestor_ID,
+      choices: structuredClone(state.choices),
+      selectedChoiceIndex: state.selectedChoiceIndex,
+    };
+  } else if (!preserveDraft) {
+    suspendedDraft = null;
+  }
+  sessionGeneration += 1;
+  Object.assign(state, structuredClone(initialState));
+  el.mainApp.classList.add('hidden');
+  el.loginCard.classList.remove('hidden');
+  el.sessionInfo.replaceChildren();
+  el.adminTabBtn.classList.add('hidden');
+  // Remove private rendered data as well as hiding the authenticated shell.
+  for (const section of [el.tabWorkParty, el.tabRequests, el.tabProfile, el.tabAdmin]) {
+    section.replaceChildren();
+  }
+  el.loginCode.value = '';
+  el.loginError.textContent = message;
+}
+
 const ADMIN_SECTIONS = [
   { id: 'application-settings', label: 'Application settings' },
   { id: 'manage-volunteers', label: 'Manage volunteers/requestors' },
@@ -69,6 +103,7 @@ const el = {
 };
 
 async function api(path, options = {}) {
+  const generation = sessionGeneration;
   const isFormData = options.body instanceof FormData;
   const res = await fetch(`/api${path}`, {
     method: options.method || 'GET',
@@ -83,8 +118,16 @@ async function api(path, options = {}) {
 
   const isTsv = (res.headers.get('content-type') || '').includes('tab-separated-values');
   const data = isTsv ? await res.text() : await res.json().catch(() => ({}));
+  if (generation !== sessionGeneration) {
+    throw new Error('Session changed. Please try again after signing in.');
+  }
   if (!res.ok) {
-    throw new Error(data.error || `${res.status} ${res.statusText}`);
+    const error = new Error(data.error || `${res.status} ${res.statusText}`);
+    error.status = res.status;
+    if (res.status === 401 && state.me) {
+      showSignIn('Your session has expired. Sign in again to continue. Unsaved trip choices are kept in this tab for your account.', true);
+    }
+    throw error;
   }
   return data;
 }
@@ -420,20 +463,53 @@ function serializeChoices(choices = state.choices) {
     .flat();
 }
 
-function setTab(tabName) {
+function defaultTab() {
+  return state.mode === 'trip-request' ? 'trip-request' : state.mode === 'work-party' ? 'work-party' : 'profile';
+}
+
+function tabFromPath() {
+  return Object.keys(PAGE_PATHS).find((tab) => PAGE_PATHS[tab] === location.pathname);
+}
+
+function setTab(tabName, historyMode = 'push') {
+  if (!state.me) return;
+  let message = '';
+  if (tabName === 'admin' && !state.me.Admin) {
+    message = 'Admin access is available only to administrators.';
+    tabName = defaultTab();
+  } else if (tabName === 'work-party' && state.mode !== 'work-party') {
+    message = 'Work party selection has not opened or is already completed';
+    tabName = defaultTab();
+  } else if (tabName === 'trip-request' && state.mode !== 'trip-request') {
+    message = 'Ski hut trip request has not opened or is already completed';
+    tabName = defaultTab();
+  } else if (!PAGE_PATHS[tabName]) {
+    message = location.pathname === '/' ? '' : 'That page is unavailable. Showing your current season page.';
+    tabName = defaultTab();
+  }
+  const path = PAGE_PATHS[tabName];
+  if (location.pathname !== path) {
+    const method = message || historyMode === 'replace' ? 'replaceState' : 'pushState';
+    history[method](null, '', path + location.search);
+  }
+  document.getElementById('navigation-message').textContent = message;
   for (const btn of document.querySelectorAll('.tabs button')) {
     btn.classList.toggle('active', btn.dataset.tab === tabName);
+    if (btn.dataset.tab === tabName) btn.setAttribute('aria-current', 'page');
+    else btn.removeAttribute('aria-current');
   }
   el.tabWorkParty.classList.toggle('hidden', tabName !== 'work-party');
   el.tabProfile.classList.toggle('hidden', tabName !== 'profile');
   el.tabRequests.classList.toggle('hidden', tabName !== 'trip-request');
   el.tabAdmin.classList.toggle('hidden', tabName !== 'admin');
+  document.title = `${{ 'trip-request': 'Trip Requests', 'work-party': 'Work Party', profile: 'Profile', admin: 'Admin' }[tabName]} | Sierra Club Ski Huts`;
 }
 
 function wireTabs() {
   for (const btn of document.querySelectorAll('.tabs button')) {
     btn.addEventListener('click', () => setTab(btn.dataset.tab));
   }
+  window.addEventListener('popstate', () => setTab(tabFromPath(), 'replace'));
 }
 
 function applyModeUi() {
@@ -449,26 +525,19 @@ function applyModeUi() {
       ? 'Ski hut trip request has not opened or is already completed'
       : '';
   }
-  if (state.mode === 'work-party') {
-    setTab('work-party');
-  } else if (state.mode === 'trip-request') {
-    setTab('trip-request');
-  } else {
-    setTab('profile');
-  }
 }
 
 function renderSession() {
   if (!state.me) return;
   const displayName = [state.me.first_name, state.me.last_name].filter(Boolean).join(' ').trim();
-  el.sessionInfo.innerHTML = `<div><strong>${displayName || state.me.Email}</strong><br/><small>${state.me.Email}</small></div><button id="logout-btn">Logout</button>`;
+  el.sessionInfo.innerHTML = `<div><strong>${escapeHtml(displayName || state.me.Email)}</strong><br/><small>${escapeHtml(state.me.Email)}</small></div><button id="logout-btn">Logout</button>`;
   document.getElementById('logout-btn').addEventListener('click', async () => {
     try {
       await api('/logout', { method: 'POST' });
     } catch {
       // Ignore logout failures; client should still return to signed-out state.
     } finally {
-      state.me = null;
+      showSignIn();
       location.href = '/';
     }
   });
@@ -568,7 +637,7 @@ function renderProfile() {
         <input class="hidden" type="file" id="waiver-file-input" accept=".pdf,.jpg,.jpeg,.png,application/pdf,image/jpeg,image/png" />
       </div>
       <button type="submit">Save Profile</button>
-      <div id="profile-msg"></div>
+      <div id="profile-msg" role="status" aria-live="polite"></div>
     </form>
     <section class="profile-history-section" aria-labelledby="profile-work-party-history-heading">
       <h3 id="profile-work-party-history-heading">Work party history</h3>
@@ -634,14 +703,19 @@ function renderProfile() {
       payload.liability_waiver_date = fd.get('liability_waiver_date');
     }
 
-    const updated = await api(`/requestor/${profile.Requestor_ID}`, { method: 'PUT', body: payload });
-    if (profile.Requestor_ID === state.me.Requestor_ID) {
-      state.me = updated;
-    } else {
-      state.profileTarget = updated;
+    try {
+      const updated = await api(`/requestor/${profile.Requestor_ID}`, { method: 'PUT', body: payload });
+      if (profile.Requestor_ID === state.me.Requestor_ID) {
+        state.me = updated;
+      } else {
+        state.profileTarget = updated;
+      }
+      document.getElementById('profile-msg').textContent = 'Saved.';
+      renderSession();
+    } catch (error) {
+      const message = document.getElementById('profile-msg');
+      if (message) message.textContent = error.message;
     }
-    document.getElementById('profile-msg').textContent = 'Saved.';
-    renderSession();
   });
 }
 
@@ -670,9 +744,11 @@ function renderRequestCard(choice, idx, activeIndex, container) {
 
   const toggle = node.querySelector('.expand-toggle');
   toggle.textContent = active ? '-' : '+';
+  toggle.setAttribute('aria-label', `Select choice ${choice.choiceNumber}`);
+  toggle.setAttribute('aria-expanded', String(active));
   toggle.addEventListener('click', () => {
     state.selectedChoiceIndex = idx;
-    renderRequests();
+    renderRequests().catch(reportAppError);
   });
 
   const details = node.querySelector('.request-details');
@@ -705,7 +781,7 @@ function renderRequestCard(choice, idx, activeIndex, container) {
         <button type="button" data-action="save">Save</button>
         <button type="button" data-action="delete">Delete Request</button>
       </div>
-      <div class="request-msg"></div>
+      <div class="request-msg" role="status" aria-live="polite"></div>
     `;
 
     for (const input of details.querySelectorAll('[data-k]')) {
@@ -730,20 +806,24 @@ function renderRequestCard(choice, idx, activeIndex, container) {
         if (!nextModes.some((m) => COMBO_MODES.includes(m))) {
           state.choices[idx].traverseDate = '';
         }
-        renderRequests();
+        renderRequests().catch(reportAppError);
       });
     }
 
     details.querySelector('[data-action="save"]').addEventListener('click', async () => {
-      await saveRequests();
-      details.querySelector('.request-msg').textContent = 'Saved.';
+      try {
+        await saveRequests();
+        details.querySelector('.request-msg').textContent = 'Saved.';
+      } catch (error) {
+        if (state.me) details.querySelector('.request-msg').textContent = error.message;
+      }
     });
 
     details.querySelector('[data-action="delete"]').addEventListener('click', () => {
       state.choices.splice(idx, 1);
       if (!state.choices.length) state.choices.push(defaultChoice());
       state.selectedChoiceIndex = Math.max(0, state.selectedChoiceIndex - 1);
-      renderRequests();
+      renderRequests().catch(reportAppError);
     });
   }
 
@@ -961,10 +1041,11 @@ async function renderRequests() {
       <button id="add-choice">Add Choice</button>
       <button id="save-all">Save All</button>
     </div>
-    <div id="requests-msg"></div>
+    <div id="requests-msg" role="status" aria-live="polite"></div>
     <div class="requests-layout">
       <div class="request-list" id="request-list"></div>
       <div>
+        <h3 id="availability-heading">Availability for your selected choice</h3>
         <div class="availability-legend" aria-label="Availability legend">
           <div class="legend-item">
             <span class="legend-swatch legend-current"></span>
@@ -979,7 +1060,7 @@ async function renderRequests() {
             <span>Groups with more credits or a higher-priority choice have requested this -- may be unavailable</span>
           </div>
         </div>
-        <div class="availability-wrap" id="availability-wrap"></div>
+        <div class="availability-wrap" id="availability-wrap" role="region" aria-labelledby="availability-heading" tabindex="0"></div>
       </div>
     </div>
   `;
@@ -990,7 +1071,7 @@ async function renderRequests() {
   document.getElementById('add-choice').addEventListener('click', () => {
     state.choices.push(defaultChoice());
     state.selectedChoiceIndex = state.choices.length - 1;
-    renderRequests();
+    renderRequests().catch(reportAppError);
   });
 
   document.getElementById('save-all').addEventListener('click', async () => {
@@ -998,7 +1079,8 @@ async function renderRequests() {
       await saveRequests();
       document.getElementById('requests-msg').textContent = 'All requests saved.';
     } catch (err) {
-      document.getElementById('requests-msg').textContent = err.message;
+      const message = document.getElementById('requests-msg');
+      if (message) message.textContent = err.message;
     }
   });
 
@@ -1487,7 +1569,7 @@ function wireAdminWorkPartyManagement() {
 
 async function renderAdmin() {
   if (!state.me?.Admin) {
-    el.tabAdmin.innerHTML = '<h2>Admin</h2><p>Admin access required.</p>';
+    el.tabAdmin.replaceChildren();
     return;
   }
 
@@ -1512,6 +1594,8 @@ async function renderAdmin() {
     });
   }
 
+  // A session may have expired while a section's data was loading.
+  if (!state.me?.Admin) return;
   el.tabAdmin.innerHTML = `
     <h2>Admin</h2>
     <div class="admin-console">
@@ -1587,7 +1671,7 @@ async function renderAdmin() {
   for (const btn of el.tabAdmin.querySelectorAll('[data-admin-section]')) {
     btn.addEventListener('click', () => {
       state.adminSection = btn.dataset.adminSection;
-      renderAdmin();
+      renderAdmin().catch(reportAppError);
     });
   }
 
@@ -1603,11 +1687,16 @@ async function renderAdmin() {
 
   const saveModeBtn = document.getElementById('save-mode');
   if (saveModeBtn) saveModeBtn.addEventListener('click', async () => {
-    const mode = document.getElementById('app-mode').value;
-    const data = await api('/mode', { method: 'PUT', body: { mode } });
-    state.mode = data.mode;
-    document.getElementById('mode-msg').textContent = 'Saved.';
-    applyModeUi();
+    try {
+      const mode = document.getElementById('app-mode').value;
+      const data = await api('/mode', { method: 'PUT', body: { mode } });
+      state.mode = data.mode;
+      document.getElementById('mode-msg').textContent = 'Saved.';
+      applyModeUi();
+      setTab(tabFromPath(), 'replace');
+    } catch (error) {
+      reportAppError(error);
+    }
   });
 
   const downloadJoinedBtn = document.getElementById('download-joined');
@@ -1648,34 +1737,61 @@ async function renderAdmin() {
 
 async function loadMeAndRender() {
   const me = await api('/me');
-  state.me = me;
-  state.choices = mapRequestsToChoices(me.requests || []);
-  state.selectedChoiceIndex = 0;
+  try {
+    state.me = me;
+    const draft = suspendedDraft?.requestorId === me.Requestor_ID ? suspendedDraft : null;
+    state.choices = draft ? draft.choices : mapRequestsToChoices(me.requests || []);
+    state.selectedChoiceIndex = draft ? draft.selectedChoiceIndex : 0;
+    state.profileTarget = null;
+    el.adminTabBtn.classList.toggle('hidden', !me.Admin);
 
-  el.loginCard.classList.add('hidden');
-  el.mainApp.classList.remove('hidden');
-  el.adminTabBtn.classList.toggle('hidden', !me.Admin);
+    renderSession();
+    await loadMode();
+    await loadWorkParties().catch(() => { state.workParties = []; });
+    renderWorkParty();
+    await renderRequests();
+    renderProfile();
+    await renderAdmin();
+    if (!state.me) return;
+    suspendedDraft = null;
+    setTab(tabFromPath(), 'replace');
+    el.loginCard.classList.add('hidden');
+    el.mainApp.classList.remove('hidden');
+  } catch (error) {
+    if (state.me) showSignIn(error.message, true);
+    throw error;
+  }
+}
 
-  renderSession();
-  await loadMode();
-  await loadWorkParties().catch(() => { state.workParties = []; });
-  renderWorkParty();
-  await renderRequests();
-  renderProfile();
-  await renderAdmin();
+function reportAppError(error) {
+  if (error.status === 401) return;
+  const message = state.me
+    ? document.getElementById('navigation-message')
+    : el.loginError;
+  message.textContent = error.message;
+}
+
+function removeLoginCredentials() {
+  const params = new URLSearchParams(location.search);
+  for (const name of ['email', 'code', 'hash']) params.delete(name);
+  const query = params.toString();
+  history.replaceState(null, '', location.pathname + (query ? `?${query}` : '') + location.hash);
 }
 
 async function tryAutoLoginFromUrl() {
   const params = new URLSearchParams(location.search);
   const email = params.get('email');
   const code = params.get('code') || params.get('hash');
-  if (!email || !code) return false;
-
-  el.loginEmail.value = email;
-  el.loginCode.value = code;
-  await api('/check-login', { method: 'POST', body: { email, code: Number(code) } });
-  await loadMeAndRender();
-  return true;
+  try {
+    if (!email || !code) return false;
+    el.loginEmail.value = email;
+    el.loginCode.value = code;
+    await api('/check-login', { method: 'POST', body: { email, code: Number(code) } });
+    await loadMeAndRender();
+    return true;
+  } finally {
+    removeLoginCredentials();
+  }
 }
 
 function wireLogin() {
@@ -1719,9 +1835,14 @@ async function init() {
 
   try {
     await loadMeAndRender();
+    removeLoginCredentials();
     return;
-  } catch {
-    // no active session
+  } catch (error) {
+    if (error.status !== 401) {
+      reportAppError(error);
+      removeLoginCredentials();
+      return;
+    }
   }
 
   try {
@@ -1731,4 +1852,4 @@ async function init() {
   }
 }
 
-init();
+init().catch(reportAppError);

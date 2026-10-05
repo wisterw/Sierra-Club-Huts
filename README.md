@@ -2,9 +2,19 @@ The Sierra Club ski hut volunteers earn early reservation privileges through the
 
 ## For Users
 
+The app runs as its own website. This year's workflow is ski-trip requests for existing volunteers; the coordinator continues managing work parties manually. Trip preferences are requests, not confirmed reservations.
+
 ### Logging in
 
 Your email has already been recorded in the system by the work party leaders.  When you enter your email we will send a temporary code to that email if it is in the system.  Your browser will remember you for 7 days after a successful login.
+
+If your email has not been recorded, contact your hut coordinator. There is no self-registration. A direct link to a page returns you to that page after sign-in when your role and the current season mode permit access.
+
+### Navigation
+
+Trip Requests (`/trip-requests`) is where you manage preferences and review availability. Profile (`/profile`) contains your contact details, waiver actions, and saved request summary. Administrators also have Admin (`/admin`). These URLs support bookmarking, refreshing, and browser Back/Forward. The root URL selects the current season's workflow; unavailable pages return you to an available page with an explanation.
+
+If your session expires, sign in again in the same tab to recover unsaved trip choices for the same account. They are not saved automatically. Refreshing the page reloads saved requests, and signing in as a different volunteer or logging out clears the prior account's drafts.
 
 ### Requests tab
 
@@ -77,6 +87,20 @@ WantedBy=multi-user.target
 **Reverse proxy note**
 If you want HTTPS, terminate TLS with an AWS load balancer or Nginx and forward to `http://127.0.0.1:3000`. When you do this, set `TRUST_PROXY=1` and `SESSION_SECURE=true` so cookies are marked secure only over HTTPS. If you are accessing the app over plain HTTP, keep `SESSION_SECURE` unset (or `false`) or the session cookie will not be accepted.
 
+### Standalone deployment and season activation
+
+Host the app at the root of its own HTTPS hostname. Forward page routes, `/api/*`, `/css/*`, and `/js/*` to Express and preserve the pathname so direct links load correctly. Drupal, iframe markup, and a `/lps/workparties` proxy prefix are not required. `PUBLIC_HOST` and `PUBLIC_SCHEME` affect startup logging; configure DNS, TLS, and proxy routing separately.
+
+Before opening trip requests to volunteers:
+
+1. Configure the production session secret, HTTPS/proxy settings, and mail relay described above. Verify a login code reaches an operator-controlled test email address already recorded in the system.
+2. Load eligible volunteers through Admin's volunteer TSV upload and check their credits and profiles. Keep the existing database and waiver storage persistent across deployments.
+3. In **Admin → Application settings**, select **Trip Request mode** and save. The app preserves its stored mode across restart; deploying a new build does not force this setting. Work Party and Inactive modes remain available for later seasons.
+4. Verify `/trip-requests`, `/profile`, and authorized `/admin` links directly over HTTPS, including refresh, Back/Forward, static assets, and a returning session. Check that non-admins cannot access Admin and unavailable workflows obey the selected mode.
+5. Check the sign-in, request editor, availability summary, and request save/reload journey on a phone and desktop. On narrow screens, wide tables scroll within their own areas.
+
+To roll back this presentation change, restore the previous application build while retaining the database, waiver storage, and session configuration. Saved volunteer and trip-request records remain compatible. Change the season mode separately through an administrator account if needed. The Drupal embedding change has been cancelled.
+
 ## For Developers
 
 ### Project specs and build notes
@@ -112,6 +136,9 @@ The repo includes focused checks for the database migration, application mode, t
 * `npm run test:assignment-status`
 * `npm run test:assignment-lottery-flag`
 * `npm run test:smoke`
+* `npm run test:standalone`
+
+The standalone browser check uses an isolated temporary database and fresh headless Chrome, tests routing and authentication continuity, and saves mobile/desktop screenshots in the temporary directory printed on completion. Install development dependencies with `npm install` and provide Google Chrome, or set `TEST_BROWSER_CHANNEL=msedge` to use Microsoft Edge. It does not use a personal browser profile or send login emails. The API smoke check also creates its own fixture accounts instead of depending on local volunteer TSV files.
 
 ### User and admin workflows
 

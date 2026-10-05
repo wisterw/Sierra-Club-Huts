@@ -11,34 +11,37 @@
       <header class="app-header">
         <div>
           <h1>Sierra Club Ski Huts</h1>
-          <p>Volunteer pre-reservation request system</p>
+          <p>Volunteer trip requests</p>
         </div>
         <div id="session-info"></div>
       </header>
 
       <section id="login-card" class="panel login-panel">
-        <h2>Login</h2>
-        <p>Enter your email, request a code, then sign in.</p>
+        <h2>Plan your hut trip</h2>
+        <p>Submit your preferred huts and dates, review other volunteers' requests, and adjust your choices before the reservation lottery. Requests are preferences, not confirmed reservations.</p>
+        <h3>Sign in</h3>
+        <p>Use the email address recorded for you by the hut coordinator. Request a code, then enter the code from your email. If your email has not been recorded, contact your coordinator.</p>
         <form id="login-form">
           <label>Email
-            <input type="email" id="login-email" required />
+            <input type="email" id="login-email" required autocomplete="email" />
           </label>
           <button id="send-login-code" type="button">Send login code to email</button>
           <label>Code
-            <input type="text" id="login-code" required inputmode="numeric" pattern="[0-9]{4}" maxlength="4" />
+            <input type="text" id="login-code" required inputmode="numeric" pattern="[0-9]{4}" maxlength="4" autocomplete="one-time-code" />
           </label>
-          <button type="submit">Login</button>
+          <button type="submit">Sign in</button>
         </form>
-        <div id="login-error" class="error"></div>
+        <div id="login-error" class="error" role="status" aria-live="polite"></div>
       </section>
 
       <main id="main-app" class="hidden">
-        <nav class="tabs">
-          <button data-tab="work-party" id="work-party-tab-btn">Work Party</button>
-          <button data-tab="trip-request" class="active">Trip Request</button>
-          <button data-tab="profile">Profile</button>
-          <button data-tab="admin" id="admin-tab-btn" class="hidden">Admin</button>
+        <nav class="tabs" aria-label="Main navigation">
+          <button data-tab="trip-request" aria-controls="tab-trip-request">Trip Requests</button>
+          <button data-tab="work-party" id="work-party-tab-btn" aria-controls="tab-work-party">Work Party</button>
+          <button data-tab="profile" aria-controls="tab-profile">Profile</button>
+          <button data-tab="admin" id="admin-tab-btn" class="hidden" aria-controls="tab-admin">Admin</button>
         </nav>
+        <p id="navigation-message" role="status" aria-live="polite"></p>
 
         <section id="tab-work-party" class="tab-content panel hidden"></section>
         <section id="tab-trip-request" class="tab-content panel"></section>

@@ -30,6 +30,11 @@ async function waitFor(url) {
 async function run() {
   const dbPath = makeTempDb();
   const waiverStorageDir = path.join(path.dirname(dbPath), 'waivers');
+  const adminEmail = 'ADMIN.SMOKE@EXAMPLE.COM';
+  const fixture = new SqliteStore({ dbPath, waiverStorageDir, importTsv: false });
+  const fixtureAdmin = fixture.upsertRequestor({ Email: adminEmail, first_name: 'Smoke', last_name: 'Admin', Admin: true, Credits: 1 });
+  fixture.updateRequestorAuthFields(fixtureAdmin.Requestor_ID, { login_code: 1234, code_generated_when: new Date().toISOString() });
+  fixture.close();
   const port = '3002';
   const server = spawn(process.execPath, ['src/server.js'], {
     cwd: path.resolve(__dirname, '..'),
@@ -41,13 +46,6 @@ async function run() {
   try {
     await waitFor(`http://127.0.0.1:${port}/`);
     const base = `http://127.0.0.1:${port}/api`;
-    const adminEmail = 'HUT.COORD@YAHOO.COM';
-
-    await fetch(`${base}/send-email`, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ email: adminEmail }),
-    });
 
     const store = new SqliteStore({ dbPath, waiverStorageDir, importTsv: false });
     const admin = store.getRequestorByEmail(adminEmail, { includePrivate: true });
@@ -149,12 +147,8 @@ async function run() {
     assert.strictEqual(volunteerProfile.requests.length, 1, 'admin target profile should include ski-trip requests');
     assert.strictEqual(volunteerProfile.requests[0].Bradley, true);
 
-    await fetch(`${base}/send-email`, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ email: volunteer.Email }),
-    });
     const volunteerReader = new SqliteStore({ dbPath, importTsv: false });
+    volunteerReader.updateRequestorAuthFields(volunteer.Requestor_ID, { login_code: 1234, code_generated_when: new Date().toISOString() });
     const volunteerLoginCode = volunteerReader.getRequestorById(volunteer.Requestor_ID, { includePrivate: true }).login_code;
     volunteerReader.close();
     const volunteerLogin = await fetch(`${base}/check-login`, {
@@ -332,10 +326,11 @@ async function run() {
     console.log('browser smoke test passed.');
   } finally {
     server.kill('SIGTERM');
+    await new Promise((resolve) => server.exitCode !== null ? resolve() : server.once('exit', resolve));
   }
 }
 
 run().catch((err) => {
   console.error(err);
-  process.exit(1);
+  process.exitCode = 1;
 });

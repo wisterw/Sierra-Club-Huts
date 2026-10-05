@@ -77,6 +77,7 @@ body {
 
 .tabs {
   display: flex;
+  flex-wrap: wrap;
   gap: 0.5rem;
   margin-top: 0.8rem;
 }
@@ -122,7 +123,7 @@ button:hover { border-color: var(--accent); }
 
 .requests-layout {
   display: grid;
-  grid-template-columns: minmax(320px, 34%) 1fr;
+  grid-template-columns: minmax(320px, 34%) minmax(0, 1fr);
   gap: 0.8rem;
 }
 
@@ -214,6 +215,22 @@ button:hover { border-color: var(--accent); }
   font-weight: 700;
   cursor: help;
   padding: 0;
+}
+
+.requests-layout > *, .panel, .admin-section { min-width: 0; }
+
+:focus-visible {
+  outline: 3px solid var(--accent-2);
+  outline-offset: 3px;
+}
+
+.app-header > * { min-width: 0; }
+#session-info { overflow-wrap: anywhere; }
+#navigation-message:empty { display: none; }
+.inline-actions { flex-wrap: wrap; }
+.profile-history-table-wrap, .availability-wrap, #eff-table {
+  max-width: 100%;
+  overflow-x: auto;
 }
 
 .info-icon:hover,
@@ -588,6 +605,11 @@ button:hover { border-color: var(--accent); }
 }
 
 @media (max-width: 620px) {
+  .app-shell { padding: 0.65rem; }
+  .app-header { flex-direction: column; }
+  .panel { padding: 0.75rem; }
+  .request-list { max-height: none; }
+  .login-panel input { width: 100%; }
   .tabs,
   .admin-nav,
   .inline-actions {
