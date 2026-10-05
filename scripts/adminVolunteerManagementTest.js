@@ -1,4 +1,5 @@
 const assert = require('assert');
+const { testAgreementVersions } = require('./testAgreementVersions');
 const fs = require('fs');
 const os = require('os');
 const path = require('path');
@@ -199,7 +200,7 @@ async function runApiAuthorizationAssertions() {
       const res = await fetch(`${base}/check-login`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ email, code: requestor.login_code }),
+        body: JSON.stringify({ email, code: requestor.login_code, agreementVersions: await testAgreementVersions(base) }),
       });
       assert(res.ok, `login should succeed for ${email}`);
       return (res.headers.get('set-cookie') || '').split(';')[0];

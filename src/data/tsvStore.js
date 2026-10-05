@@ -3,6 +3,7 @@ const path = require('path');
 const { DATA_DIR, REQUESTORS_FILE, REQUESTS_FILE, HUTS } = require('../config');
 const { closestSaturdayWeekKey } = require('../services/dates');
 const { normalizeEmail } = require('../services/auth');
+const { normalizeCredits } = require('../services/credits');
 
 const REQUESTORS_HEADERS = [
   'Requestor_ID',
@@ -144,7 +145,7 @@ class TsvStore {
       zip: r.zip || '',
       Phone: r.Phone || '',
       Comments: r.Comments || '',
-      Credits: Number(r.Credits || 0),
+      Credits: normalizeCredits(r.Credits || 0),
       login_code: Number.isInteger(Number(r.login_code)) ? Number(r.login_code) : 0,
       code_generated_when: r.code_generated_when || r.Email_code_sent || '',
       Admin: boolFromAny(r.Admin),
@@ -235,6 +236,7 @@ class TsvStore {
     const now = new Date().toISOString();
     const normalizedEmail = normalizeEmail(partial.Email);
     let existing = this.getRequestorByEmail(normalizedEmail);
+    const credits = normalizeCredits(partial.Credits !== undefined ? partial.Credits : existing?.Credits ?? 0);
 
     if (existing) {
       existing.first_name = partial.first_name ?? existing.first_name;
@@ -245,7 +247,7 @@ class TsvStore {
       existing.zip = partial.zip ?? existing.zip;
       existing.Phone = partial.Phone ?? existing.Phone;
       existing.Comments = partial.Comments ?? existing.Comments;
-      existing.Credits = Number(partial.Credits ?? existing.Credits);
+      existing.Credits = credits;
       existing.Admin = partial.Admin !== undefined ? Boolean(partial.Admin) : existing.Admin;
       existing.years_of_service = Number(partial.years_of_service ?? existing.years_of_service ?? 0);
       existing.login_code = partial.login_code !== undefined ? Number(partial.login_code || 0) : existing.login_code;
@@ -273,7 +275,7 @@ class TsvStore {
       zip: partial.zip ?? '',
       Phone: partial.Phone ?? '',
       Comments: partial.Comments ?? '',
-      Credits: Number(partial.Credits ?? 0),
+      Credits: credits,
       login_code: Number(partial.login_code || 0),
       code_generated_when: partial.code_generated_when ?? partial.Email_code_sent ?? '',
       Admin: Boolean(partial.Admin),
@@ -293,6 +295,7 @@ class TsvStore {
     if (!existing) {
       return null;
     }
+    const credits = updates.Credits !== undefined ? normalizeCredits(updates.Credits) : existing.Credits;
     existing.first_name = updates.first_name ?? existing.first_name;
     existing.last_name = updates.last_name ?? existing.last_name;
     existing.address = updates.address ?? existing.address;
@@ -302,7 +305,7 @@ class TsvStore {
     existing.Phone = updates.Phone ?? existing.Phone;
     existing.Comments = updates.Comments ?? existing.Comments;
     if (updates.Credits !== undefined) {
-      existing.Credits = Number(updates.Credits);
+      existing.Credits = credits;
     }
     if (updates.years_of_service !== undefined) {
       existing.years_of_service = Number(updates.years_of_service);

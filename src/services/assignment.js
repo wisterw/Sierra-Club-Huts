@@ -1,10 +1,6 @@
-const { HUTS, HUT_CAPACITY } = require('../config');
-const { dateRangeNights, closestSaturdayWeekKey } = require('./dates');
-const { hutsForRequest } = require('./requestLogic');
-
-const HUT_TIEBREAK_ORDER = ['Ludlow', 'Benson', 'Bradley', 'Grubb'];
+const { HUTS } = require('../config');
+const { closestSaturdayWeekKey } = require('./dates');
 const STATUS_GRANTED = new Set(['granted', 'confirmed']);
-const STATUS_REQUESTED = new Set(['requested', 'pending']);
 
 function stringToSeed(str) {
   let h = 1779033703 ^ str.length;
@@ -33,13 +29,9 @@ function createRng(seed) {
 }
 
 function coerceLotteryValue(value) {
+  if (value === null || value === undefined || value === '') return null;
   const num = Number(value);
   return Number.isFinite(num) ? num : null;
-}
-
-function coerceYearsOfService(value) {
-  const num = Number(value);
-  return Number.isFinite(num) ? num : 0;
 }
 
 function assignLotteryValues(requestorsById, options = {}) {
@@ -48,6 +40,7 @@ function assignLotteryValues(requestorsById, options = {}) {
   const changed = [];
 
   for (const requestor of requestorsById.values()) {
+    if (requestor.Is_placeholder) { requestor.Lottery_value = 0; requestor.lottery_value = 0; continue; }
     const current = coerceLotteryValue(requestor.Lottery_value ?? requestor.lottery_value);
     if (regenerate || current === null) {
       const next = rng();
@@ -67,203 +60,7 @@ function isGranted(req) {
   return STATUS_GRANTED.has(req.Status);
 }
 
-function normalizeStatus(req) {
-  if (!req.Status || STATUS_REQUESTED.has(req.Status)) {
-    req.Status = 'requested';
-  }
-  if (req.Status === 'not-needed') {
-    req.Status = 'not-used';
-  }
-}
-
-function buildOccupancy(requests) {
-  const occ = {};
-  for (const req of requests) {
-    if (!isGranted(req) || !req.Hut_granted) continue;
-    for (const night of dateRangeNights(req.Arrival, req.Departure)) {
-      const key = `${night}|${req.Hut_granted}`;
-      occ[key] = (occ[key] || 0) + Number(req.Spots_granted || 0);
-    }
-  }
-  return occ;
-}
-
-function adjustOccupancy(occupancy, req, delta) {
-  if (!req.Hut_granted) return;
-  for (const night of dateRangeNights(req.Arrival, req.Departure)) {
-    const key = `${night}|${req.Hut_granted}`;
-    occupancy[key] = (occupancy[key] || 0) + delta;
-  }
-}
-
-function availableMinRemaining(hut, nights, occupancy) {
-  let minRemaining = Infinity;
-  for (const night of nights) {
-    const key = `${night}|${hut}`;
-    const used = occupancy[key] || 0;
-    const remaining = HUT_CAPACITY[hut] - used;
-    if (remaining < minRemaining) minRemaining = remaining;
-  }
-  return minRemaining;
-}
-
-function chooseBestHut(huts, nights, occupancy, spotsNeeded) {
-  let bestHut = null;
-  let bestRemaining = -Infinity;
-
-  for (const hut of huts) {
-    const minRemaining = availableMinRemaining(hut, nights, occupancy);
-    if (minRemaining < spotsNeeded) continue;
-    if (minRemaining > bestRemaining) {
-      bestRemaining = minRemaining;
-      bestHut = hut;
-    } else if (minRemaining === bestRemaining && bestHut) {
-      const order = new Map(HUT_TIEBREAK_ORDER.map((h, idx) => [h, idx]));
-      if ((order.get(hut) ?? 99) < (order.get(bestHut) ?? 99)) {
-        bestHut = hut;
-      }
-    }
-  }
-
-  return bestHut;
-}
-
-function commitAssignment(req, hut, occupancy) {
-  const grant = Number(req.Spots_granted || 0);
-  req.Hut_granted = hut;
-  req.Status = 'granted';
-  req.Assignment_audit = `Granted ${grant} spot(s) at ${hut}.`;
-  req.Confirmed_How = req.Assignment_audit;
-  req.Last_mod_date = new Date().toISOString();
-  adjustOccupancy(occupancy, req, grant);
-}
-
-function markOtherChoicesNotUsed(requests, requestorId, choiceNumber, grantedReq) {
-  const now = new Date().toISOString();
-  for (const r of requests) {
-    if (Number(r.Requestor_ID) !== Number(requestorId)) continue;
-    if (r === grantedReq) continue;
-    if (Number(r.Choice_Number) >= Number(choiceNumber)) {
-      r.Status = 'not-used';
-      r.Assignment_audit = `Skipped because choice ${choiceNumber} was granted.`;
-      r.Confirmed_How = r.Assignment_audit;
-      r.Last_mod_date = now;
-    }
-  }
-}
-
-function requestNights(req) {
-  return dateRangeNights(req.Arrival, req.Departure);
-}
-
-function requestMinSpots(req) {
-  return Number(req.Spots_min ?? req.Spots_ideal ?? 0);
-}
-
-function requestIdealSpots(req) {
-  return Number(req.Spots_ideal ?? 0);
-}
-
-function findAssignment(req, occupancy) {
-  const huts = hutsForRequest(req);
-  if (!huts.length) return null;
-
-  const nights = requestNights(req);
-  const minSpots = requestMinSpots(req);
-  const idealSpots = requestIdealSpots(req);
-
-  for (let spots = idealSpots; spots >= minSpots; spots -= 1) {
-    const bestHut = chooseBestHut(huts, nights, occupancy, spots);
-    if (bestHut) {
-      return { hut: bestHut, spots };
-    }
-  }
-
-  return null;
-}
-
-function runAssignment(requests, requestorsById, options = {}) {
-  const changedRequestors = assignLotteryValues(requestorsById, {
-    seed: options.seed,
-    regenerate: options.regenerateLotteryNumbers !== false,
-  });
-  const now = new Date().toISOString();
-  for (const req of requests) {
-    normalizeStatus(req);
-    req.Status = 'requested';
-    req.Hut_granted = '';
-    req.Spots_granted = Number(req.Spots_ideal || 0);
-    req.Confirmed_How = '';
-    req.Assignment_audit = '';
-    req.Lottery_value = coerceLotteryValue(requestorsById.get(Number(req.Requestor_ID))?.Lottery_value) ?? null;
-    req.hut_count_flexibility = hutsForRequest(req).length;
-    req.saturday_week_number = closestSaturdayWeekKey(req.Arrival, req.Departure);
-    req.Last_mod_date = now;
-  }
-
-  const occupancy = buildOccupancy(requests);
-  const grantedRequestors = new Set();
-  const maxChoice = requests.reduce((max, r) => Math.max(max, Number(r.Choice_Number || 0)), 0);
-
-  const getCredits = (req) => Number(requestorsById.get(Number(req.Requestor_ID))?.Credits || 0);
-
-  for (let choice = 1; choice <= maxChoice; choice += 1) {
-    const candidates = requests.filter((r) => (
-      r.Status === 'requested'
-      && Number(r.Choice_Number) === choice
-      && !grantedRequestors.has(Number(r.Requestor_ID))
-    ));
-
-    const scored = candidates.map((req) => {
-      const nights = requestNights(req).length;
-      const minSpots = requestMinSpots(req);
-      const impact = minSpots * nights;
-      const flex = hutsForRequest(req).length;
-      return {
-        req,
-        credits: getCredits(req),
-        impact,
-        flex,
-        yearsOfService: coerceYearsOfService(requestorsById.get(Number(req.Requestor_ID))?.years_of_service),
-        lottery: coerceLotteryValue(requestorsById.get(Number(req.Requestor_ID))?.Lottery_value) ?? Number.MAX_SAFE_INTEGER,
-      };
-    });
-
-    scored.sort((a, b) => {
-      if (b.credits !== a.credits) return b.credits - a.credits;
-      if (a.impact !== b.impact) return a.impact - b.impact;
-      if (a.flex !== b.flex) return a.flex - b.flex;
-      if (b.yearsOfService !== a.yearsOfService) return b.yearsOfService - a.yearsOfService;
-      if (a.lottery !== b.lottery) return a.lottery - b.lottery;
-      return Number(a.req.Requestor_ID || 0) - Number(b.req.Requestor_ID || 0);
-    });
-
-    for (const row of scored) {
-      const req = row.req;
-      if (req.Status !== 'requested') continue;
-      if (grantedRequestors.has(Number(req.Requestor_ID))) continue;
-
-      const assignment = findAssignment(req, occupancy);
-      if (!assignment) continue;
-
-      req.Spots_granted = assignment.spots;
-      commitAssignment(req, assignment.hut, occupancy);
-      grantedRequestors.add(Number(req.Requestor_ID));
-      markOtherChoicesNotUsed(requests, req.Requestor_ID, req.Choice_Number, req);
-    }
-  }
-
-  for (const req of requests) {
-    if (req.Status === 'requested') {
-      req.Status = 'lost-lottery';
-      req.Assignment_audit = 'No requested hut had capacity for the minimum acceptable spots.';
-      req.Confirmed_How = req.Assignment_audit;
-      req.Last_mod_date = new Date().toISOString();
-    }
-  }
-
-  return { requestorsToPersist: changedRequestors };
-}
+const { runAssignment } = require('./optimizedAssignment');
 
 function efficiencyReport(requests) {
   const byRequestor = new Map();
@@ -333,6 +130,8 @@ function requestsJoinedReport(requests, requestorsById, options = {}) {
 
     if (!reqs.length) {
       out.push({
+        Is_placeholder: !!requestor.Is_placeholder,
+        Reservation_reference: requestor.Reservation_reference || '',
         Requestor_ID: requestor.Requestor_ID,
         Email: requestor.Email || '',
         first_name: requestor.first_name || '',
@@ -371,6 +170,9 @@ function requestsJoinedReport(requests, requestorsById, options = {}) {
         Lottery_value: '',
         Request_Creation_date: '',
         Request_Last_mod_date: '',
+        contention_status: '',
+        contention_status_changed_at: '',
+        contention_email_sent_at: '',
         hut_count_flexibility: '',
         saturday_week_number: '',
         Combination_first_request: '',
@@ -389,6 +191,8 @@ function requestsJoinedReport(requests, requestorsById, options = {}) {
     for (const req of filteredReqs) {
       const hutsCount = HUTS.filter((h) => req[h]).length;
       out.push({
+        Is_placeholder: !!requestor.Is_placeholder,
+        Reservation_reference: requestor.Reservation_reference || '',
         Requestor_ID: requestor.Requestor_ID,
         Email: requestor.Email || '',
         first_name: requestor.first_name || '',
@@ -427,6 +231,9 @@ function requestsJoinedReport(requests, requestorsById, options = {}) {
         Lottery_value: Number(req.Lottery_value || 0),
         Request_Creation_date: req.Creation_date || '',
         Request_Last_mod_date: req.Last_mod_date || '',
+        contention_status: req.contention_status ?? '',
+        contention_status_changed_at: req.contention_status_changed_at ?? '',
+        contention_email_sent_at: req.contention_email_sent_at ?? '',
         hut_count_flexibility: Number(req.hut_count_flexibility || hutsCount || 0),
         saturday_week_number: req.saturday_week_number || closestSaturdayWeekKey(req.Arrival, req.Departure),
         Combination_first_request: req.Combination_first_request || '',

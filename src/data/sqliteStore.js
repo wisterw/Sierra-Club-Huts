@@ -5,6 +5,8 @@ const { DatabaseSync } = require('node:sqlite');
 const { DATABASE_FILE, DATA_DIR, HUTS, REQUESTORS_FILE, REQUESTS_FILE, WAIVER_STORAGE_DIR } = require('../config');
 const { closestSaturdayWeekKey } = require('../services/dates');
 const { normalizeEmail } = require('../services/auth');
+const { creditsToTenths, creditsFromTenths } = require('../services/credits');
+const { calculateContention } = require('../services/contention');
 const {
   parseTsv,
   REQUESTORS_HEADERS,
@@ -149,6 +151,8 @@ function rowToRequestor(row) {
     : Number(row.lottery_value);
   const requestor = {
     Requestor_ID: Number(row.requestor_id),
+    Is_placeholder: fromIntBool(row.is_placeholder),
+    Reservation_reference: row.reservation_reference || null,
     Email: row.email || '',
     first_name: row.first_name || '',
     last_name: row.last_name || '',
@@ -158,7 +162,7 @@ function rowToRequestor(row) {
     zip: row.zip || '',
     Phone: row.phone || '',
     Comments: row.comments || '',
-    Credits: Number(row.credits || 0),
+    Credits: creditsFromTenths(row.credits_tenths),
     login_code: Number(row.login_code || 0),
     code_generated_when: row.code_generated_when || '',
     Admin: fromIntBool(row.admin),
@@ -226,6 +230,9 @@ function rowToTripRequest(row) {
     hut_count_flexibility: Number(row.hut_count_flexibility || 0),
     saturday_week_number: row.saturday_week_number || '',
     Combination_first_request: row.combination_first_request ? Number(row.combination_first_request) : null,
+    contention_status: row.contention_status ?? null,
+    contention_status_changed_at: row.contention_status_changed_at ?? null,
+    contention_email_sent_at: row.contention_email_sent_at ?? null,
   };
   return {
     ...request,
@@ -270,6 +277,9 @@ function rowToWorkParty(row) {
 
 class SqliteStore {
   constructor(options = {}) {
+    this.contentionClock = options.clock || nowIso;
+    this.transactionDepth = 0;
+    this.contentionRefreshPending = false;
     this.dbPath = options.dbPath || DATABASE_FILE;
     this.waiverStorageDir = options.waiverStorageDir || WAIVER_STORAGE_DIR;
     fs.mkdirSync(path.dirname(this.dbPath), { recursive: true });
@@ -277,16 +287,28 @@ class SqliteStore {
     this.initWaiverStorageDir();
     this.db = new DatabaseSync(this.dbPath);
     this.db.exec('PRAGMA foreign_keys = ON');
-    this.initSchema();
-    this.ensureRequestorLotteryColumn();
-    this.ensureRequestorWaiverColumns();
-    this.ensureWorkPartyAvailabilityColumn();
-    this.seedDefaults();
-    if (options.importTsv !== false) {
-      this.importTsvIfEmpty({
-        requestorsFile: options.requestorsFile || REQUESTORS_FILE,
-        requestsFile: options.requestsFile || REQUESTS_FILE,
-      });
+    try {
+      this.initSchema();
+      require('./placeholderReservations').initPlaceholderSchema(this);
+      this.ensureCreditTenthsColumn();
+      this.ensureRequestorLotteryColumn();
+      this.ensureRequestorWaiverColumns();
+      this.ensureWorkPartyAvailabilityColumn();
+      this.ensureContentionColumns();
+      this.seedDefaults();
+      if (options.importTsv !== false) {
+        this.importTsvIfEmpty({
+          requestorsFile: options.requestorsFile || REQUESTORS_FILE,
+          requestsFile: options.requestsFile || REQUESTS_FILE,
+        });
+      }
+      this.refreshContention();
+      const { ContentionAlertState } = require('./contentionAlertState');
+      this.alerts = new ContentionAlertState(this);
+      require('./allocationRepository').initAllocationSchema(this);
+    } catch (error) {
+      this.db.close();
+      throw error;
     }
   }
 
@@ -307,7 +329,7 @@ class SqliteStore {
         zip TEXT DEFAULT '',
         phone TEXT DEFAULT '',
         comments TEXT DEFAULT '',
-        credits INTEGER NOT NULL DEFAULT 0,
+        credits_tenths INTEGER NOT NULL DEFAULT 0,
         login_code INTEGER,
         code_generated_when TEXT,
         admin INTEGER NOT NULL DEFAULT 0,
@@ -346,6 +368,9 @@ class SqliteStore {
         last_mod_date TEXT,
         hut_count_flexibility INTEGER NOT NULL DEFAULT 0,
         saturday_week_number TEXT DEFAULT '',
+        contention_status TEXT CHECK (contention_status IS NULL OR contention_status IN ('at-risk', 'losing')),
+        contention_status_changed_at TEXT,
+        contention_email_sent_at TEXT,
         combination_first_request INTEGER REFERENCES ski_trip_requests(request_id) ON DELETE SET NULL
       );
 
@@ -377,6 +402,21 @@ class SqliteStore {
         key TEXT PRIMARY KEY,
         value TEXT NOT NULL
       );
+
+      CREATE TABLE IF NOT EXISTS agreement_documents (
+        version TEXT PRIMARY KEY,
+        kind TEXT NOT NULL CHECK (kind IN ('termsOfUse', 'privacyPolicy')),
+        content TEXT NOT NULL,
+        last_updated TEXT NOT NULL
+      );
+
+      CREATE TABLE IF NOT EXISTS requestor_agreement_acknowledgements (
+        requestor_id INTEGER NOT NULL REFERENCES requestors(requestor_id) ON DELETE CASCADE,
+        terms_version TEXT NOT NULL REFERENCES agreement_documents(version),
+        privacy_version TEXT NOT NULL REFERENCES agreement_documents(version),
+        acknowledged_at TEXT NOT NULL,
+        PRIMARY KEY (requestor_id, terms_version, privacy_version)
+      );
     `);
   }
 
@@ -384,6 +424,27 @@ class SqliteStore {
     const columns = this.db.prepare('PRAGMA table_info(requestors)').all().map((row) => row.name);
     if (!columns.includes('lottery_value')) {
       this.db.exec('ALTER TABLE requestors ADD COLUMN lottery_value REAL');
+    }
+  }
+
+  recordAgreementAcknowledgement(requestorId, documents) {
+    this.db.exec('BEGIN IMMEDIATE');
+    try {
+      for (const kind of ['termsOfUse', 'privacyPolicy']) {
+        const document = documents[kind];
+        this.db.prepare('INSERT INTO agreement_documents (version, kind, content, last_updated) VALUES (?, ?, ?, ?) ON CONFLICT(version) DO NOTHING')
+          .run(document.version, kind, document.content, document.lastUpdated);
+        const stored = this.db.prepare('SELECT kind, content FROM agreement_documents WHERE version = ?').get(document.version);
+        if (stored.kind !== kind || stored.content !== document.content) throw new Error('Agreement version conflicts with its stored document.');
+      }
+      this.db.prepare(`INSERT INTO requestor_agreement_acknowledgements
+        (requestor_id, terms_version, privacy_version, acknowledged_at) VALUES (?, ?, ?, ?)
+        ON CONFLICT(requestor_id, terms_version, privacy_version) DO NOTHING`)
+        .run(requestorId, documents.termsOfUse.version, documents.privacyPolicy.version, new Date().toISOString());
+      this.db.exec('COMMIT');
+    } catch (error) {
+      this.db.exec('ROLLBACK');
+      throw error;
     }
   }
 
@@ -413,15 +474,96 @@ class SqliteStore {
     stmt.run('application_mode', 'inactive');
   }
 
-  runTransaction(fn) {
-    this.db.exec('BEGIN');
+  ensureCreditTenthsColumn() {
+    const columns = this.db.prepare('PRAGMA table_info(requestors)').all().map((column) => column.name);
+    if (columns.includes('credits_tenths')) return;
+    if (!columns.includes('credits')) throw new Error('Requestor credit column is missing.');
+    this.runTransaction(() => {
+      const converted = this.db.prepare('SELECT requestor_id, credits FROM requestors').all().map((row) => {
+        try {
+          return { id: row.requestor_id, tenths: creditsToTenths(row.credits) };
+        } catch (error) {
+          throw new Error(`Cannot migrate credits for requestor ${row.requestor_id}: ${error.message}`);
+        }
+      });
+      this.db.exec('ALTER TABLE requestors RENAME COLUMN credits TO credits_tenths');
+      const update = this.db.prepare('UPDATE requestors SET credits_tenths = ? WHERE requestor_id = ?');
+      for (const row of converted) update.run(row.tenths, row.id);
+    });
+  }
+
+  ensureContentionColumns() {
+    const columns = new Set(this.db.prepare('PRAGMA table_info(ski_trip_requests)').all().map((column) => column.name));
+    this.runTransaction(() => {
+      if (!columns.has('contention_status')) {
+        this.db.exec("ALTER TABLE ski_trip_requests ADD COLUMN contention_status TEXT CHECK (contention_status IS NULL OR contention_status IN ('at-risk', 'losing'))");
+      }
+      for (const column of ['contention_status_changed_at', 'contention_email_sent_at']) {
+        if (!columns.has(column)) this.db.exec(`ALTER TABLE ski_trip_requests ADD COLUMN ${column} TEXT`);
+      }
+    });
+  }
+
+  contentionTimestamp() {
+    return new Date(this.contentionClock()).toISOString();
+  }
+
+  refreshContention() {
+    return this.runTransaction(() => this.refreshContentionInTransaction());
+  }
+
+  refreshContentionInTransaction() {
+    this.contentionRefreshPending = false;
+    const requests = this.listRequests();
+    const requestors = new Map(this.listRequestors().map((requestor) => [requestor.Requestor_ID, requestor]));
+    const statuses = calculateContention(requests, requestors);
+    const timestamp = this.contentionTimestamp();
+    const update = this.db.prepare('UPDATE ski_trip_requests SET contention_status = ?, contention_status_changed_at = ? WHERE request_id = ?');
+    let changed = 0;
+    for (const request of requests) {
+      const next = statuses.get(request.Request_ID);
+      if (request.contention_status === next) continue;
+      update.run(next, timestamp, request.Request_ID);
+      changed += 1;
+    }
+    return { evaluated: requests.length, changed };
+  }
+
+  recordContentionEmailSent(requestIds) {
+    const ids = [...new Set(Array.isArray(requestIds) ? requestIds : [requestIds])];
+    if (!ids.length || ids.some((id) => !Number.isSafeInteger(id) || id <= 0)) {
+      throw new Error('Contention email recording requires valid request IDs.');
+    }
+    return this.runTransaction(() => {
+      const timestamp = this.contentionTimestamp();
+      const update = this.db.prepare('UPDATE ski_trip_requests SET contention_email_sent_at = ? WHERE request_id = ?');
+      for (const id of ids) {
+        if (!update.run(timestamp, id).changes) throw new Error(`Cannot record contention email for missing request ${id}.`);
+      }
+      return timestamp;
+    });
+  }
+
+  runTransaction(fn, options = {}) {
+    // Internal repository operations join the outer transaction; only its final
+    // request/credit state is evaluated. Errors propagate to the outer rollback.
+    if (this.transactionDepth) return fn();
+    this.db.exec('BEGIN IMMEDIATE');
+    this.transactionDepth = 1;
     try {
       const result = fn();
+      if (this.contentionRefreshPending) {
+        this.refreshContentionInTransaction();
+        this.alerts?.sync(options.actorId ?? null, options.acknowledgeActor || false);
+      }
       this.db.exec('COMMIT');
       return result;
     } catch (err) {
       this.db.exec('ROLLBACK');
       throw err;
+    } finally {
+      this.transactionDepth = 0;
+      this.contentionRefreshPending = false;
     }
   }
 
@@ -443,7 +585,7 @@ class SqliteStore {
     const insertRequestor = this.db.prepare(`
       INSERT OR REPLACE INTO requestors (
         requestor_id, email, first_name, last_name, address, city, state, zip,
-        phone, comments, credits, login_code, code_generated_when, admin,
+        phone, comments, credits_tenths, login_code, code_generated_when, admin,
         creation_date, last_mod_date, last_failed_login, years_of_service, lottery_value
       ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
     `);
@@ -470,7 +612,7 @@ class SqliteStore {
           r.zip || '',
           r.Phone || '',
           r.Comments || '',
-          Number(r.Credits || 0),
+          creditsToTenths(r.Credits || 0),
           Number(r.login_code || 0),
           r.code_generated_when || r.Email_code_sent || '',
           intBool(r.Admin),
@@ -506,6 +648,7 @@ class SqliteStore {
           r.saturday_week_number || closestSaturdayWeekKey(r.Arrival, r.Departure)
         );
       }
+      this.contentionRefreshPending = true;
     });
   }
 
@@ -537,16 +680,25 @@ class SqliteStore {
     return publicRequestor;
   }
 
-  upsertRequestor(partial = {}) {
+  upsertRequestor(partial = {}, options = {}) {
+    return this.runTransaction(() => this.upsertRequestorInTransaction(partial), options);
+  }
+
+  upsertRequestorInTransaction(partial) {
     const now = nowIso();
     const normalizedEmail = normalizeEmail(partial.Email);
     const existing = this.getRequestorByEmail(normalizedEmail, { includePrivate: true });
+    if (existing?.Is_placeholder) throw new Error('Manage placeholders through Existing reservations.');
+    if (boolFromAny(partial.Is_placeholder) || boolFromAny(partial.is_placeholder) || partial.Reservation_reference != null) throw new Error('Placeholder fields are reserved for reservation imports.');
+    const creditValue = partial.Credits !== undefined ? partial.Credits
+      : partial.credits !== undefined ? partial.credits : existing?.Credits ?? 0;
+    const creditTenths = creditsToTenths(creditValue);
     const id = existing?.Requestor_ID || this.nextRequestorId();
     const creation = existing?.Creation_date || now;
     this.db.prepare(`
       INSERT INTO requestors (
         requestor_id, email, first_name, last_name, address, city, state, zip,
-        phone, comments, credits, login_code, code_generated_when, admin,
+        phone, comments, credits_tenths, login_code, code_generated_when, admin,
         creation_date, last_mod_date, last_failed_login, years_of_service,
         lottery_value, has_a_chainsaw, chainsaw_user, other_skills, private_comments, liability_waiver_date,
         liability_waiver_file, liability_waiver_submitted_at
@@ -560,7 +712,7 @@ class SqliteStore {
         zip = excluded.zip,
         phone = excluded.phone,
         comments = excluded.comments,
-        credits = excluded.credits,
+        credits_tenths = excluded.credits_tenths,
         login_code = excluded.login_code,
         code_generated_when = excluded.code_generated_when,
         admin = excluded.admin,
@@ -586,7 +738,7 @@ class SqliteStore {
       partial.zip ?? existing?.zip ?? '',
       partial.Phone ?? partial.phone ?? existing?.Phone ?? '',
       partial.Comments ?? partial.comments ?? existing?.Comments ?? '',
-      Number(partial.Credits ?? partial.credits ?? existing?.Credits ?? 0),
+      creditTenths,
       Number(partial.login_code ?? existing?.login_code ?? 0),
       partial.code_generated_when ?? existing?.code_generated_when ?? '',
       intBool(partial.Admin ?? partial.admin ?? existing?.Admin ?? false),
@@ -603,6 +755,7 @@ class SqliteStore {
       partial.liability_waiver_file ?? existing?.liability_waiver_file ?? '',
       partial.liability_waiver_submitted_at ?? existing?.liability_waiver_submitted_at ?? ''
     );
+    if (existing && existing.Credits !== creditsFromTenths(creditTenths)) this.contentionRefreshPending = true;
     return this.getRequestorByEmail(normalizedEmail, { includePrivate: true });
   }
 
@@ -616,7 +769,7 @@ class SqliteStore {
         this.upsertRequestor(partial);
       }
       return { created, updated, skipped: Number(options.skipped || 0) };
-    });
+    }, options);
   }
 
   nextRequestorId() {
@@ -651,7 +804,7 @@ class SqliteStore {
       if (allowed.has(key) && value !== undefined) next[key] = value;
     }
     next.Email = existing.Email;
-    this.upsertRequestor(next);
+    this.upsertRequestor(next, options);
     return this.getRequestorById(id, { includePrivate: options.includePrivate });
   }
 
@@ -706,11 +859,18 @@ class SqliteStore {
       .map(rowToTripRequest);
   }
 
-  replaceRequestsForRequestor(id, requests) {
+  replaceRequestsForRequestor(id, requests, options = {}) {
+    return this.runTransaction(() => this.replaceRequestsInTransaction(id, requests), {
+      ...options, acknowledgeActor: Number(options.actorId) === Number(id),
+    });
+  }
+
+  replaceRequestsInTransaction(id, requests) {
     const rid = Number(id);
     const now = nowIso();
     const existing = this.getRequestsByRequestorId(rid);
     const existingById = new Map(existing.map((r) => [Number(r.Request_ID), r]));
+    const notificationIdentities = new Map(this.db.prepare('SELECT request_id, notification_identity FROM ski_trip_requests WHERE requestor_id = ?').all(rid).map((r) => [Number(r.request_id), r.notification_identity]));
     const orderedChoiceNumbers = [...new Set(
       requests.map((r) => Number(r.Choice_Number)).filter((n) => Number.isFinite(n))
     )].sort((a, b) => a - b);
@@ -720,8 +880,9 @@ class SqliteStore {
         request_id, requestor_id, benson, bradley, grubb, ludlow, arrival, departure,
         choice_number, spots_ideal, spots_min, hut_granted, spots_granted, status,
         lottery_value, assignment_audit, creation_date, last_mod_date,
-        hut_count_flexibility, saturday_week_number, combination_first_request
-      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+        hut_count_flexibility, saturday_week_number, combination_first_request,
+        contention_status, contention_status_changed_at, contention_email_sent_at, notification_identity
+      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
     `);
     this.runTransaction(() => {
       this.db.prepare('DELETE FROM ski_trip_requests WHERE requestor_id = ?').run(rid);
@@ -752,7 +913,11 @@ class SqliteStore {
           now,
           Number(hutCount || 0),
           closestSaturdayWeekKey(input.Arrival, input.Departure),
-          input.Combination_first_request || null
+          null,
+          previous?.contention_status ?? null,
+          previous?.contention_status_changed_at ?? null,
+          previous?.contention_email_sent_at ?? null,
+          previous ? notificationIdentities.get(previous.Request_ID) : crypto.randomUUID()
         );
         saved.push({ input, requestId: requestId || Number(result.lastInsertRowid) });
       }
@@ -764,6 +929,13 @@ class SqliteStore {
         byClientGroup.get(row.input.Client_combo_group).push(row);
       }
       const updateCombo = this.db.prepare('UPDATE ski_trip_requests SET combination_first_request = ? WHERE request_id = ?');
+      // Restore saved linkage after every row exists, avoiding forward-reference
+      // foreign-key failures when the supplied rows arrive in a different order.
+      for (const row of saved) {
+        if (row.input.Combination_first_request && !row.input.Client_combo_group) {
+          updateCombo.run(Number(row.input.Combination_first_request), row.requestId);
+        }
+      }
       for (const groupRows of byClientGroup.values()) {
         groupRows.sort((a, b) => String(a.input.Arrival).localeCompare(String(b.input.Arrival)));
         const firstId = groupRows[0]?.requestId;
@@ -771,6 +943,7 @@ class SqliteStore {
           updateCombo.run(firstId, row.requestId);
         }
       }
+      this.contentionRefreshPending = true;
     });
   }
 
@@ -994,7 +1167,7 @@ class SqliteStore {
       ? String(filters.waiverStatus || 'all')
       : 'all';
 
-    const requestors = this.listRequestors({ includePrivate: true });
+    const requestors = this.listRequestors({ includePrivate: true }).filter((p) => !p.Is_placeholder);
     const workPartyRows = this.getWorkPartyRequestRows(year);
     const workPartyRowsByRequestor = new Map();
     for (const row of workPartyRows) {
@@ -1134,7 +1307,7 @@ class SqliteStore {
   }
 
   listLiabilityWaiverReviewQueue(year = new Date().getFullYear()) {
-    return this.listRequestors({ includePrivate: true })
+    return this.listRequestors({ includePrivate: true }).filter((p) => !p.Is_placeholder)
       .filter((requestor) => (
         requestor.liability_waiver_file
         && !isWaiverApprovedForYear(requestor.liability_waiver_date, year)

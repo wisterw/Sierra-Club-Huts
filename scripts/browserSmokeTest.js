@@ -1,4 +1,5 @@
 const assert = require('assert');
+const { testAgreementVersions } = require('./testAgreementVersions');
 const fs = require('fs');
 const os = require('os');
 const path = require('path');
@@ -55,7 +56,7 @@ async function run() {
     const loginRes = await fetch(`${base}/check-login`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ email: adminEmail, code }),
+      body: JSON.stringify({ email: adminEmail, code, agreementVersions: await testAgreementVersions(base) }),
     });
     assert(loginRes.ok, 'login should succeed');
     const cookie = (loginRes.headers.get('set-cookie') || '').split(';')[0];
@@ -154,7 +155,7 @@ async function run() {
     const volunteerLogin = await fetch(`${base}/check-login`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ email: volunteer.Email, code: volunteerLoginCode }),
+      body: JSON.stringify({ email: volunteer.Email, code: volunteerLoginCode, agreementVersions: await testAgreementVersions(base) }),
     });
     assert(volunteerLogin.ok, 'volunteer login should succeed');
     const volunteerCookie = (volunteerLogin.headers.get('set-cookie') || '').split(';')[0];
@@ -312,6 +313,15 @@ async function run() {
       body: JSON.stringify({}),
     });
     assert(res.ok, 'lottery regeneration should succeed');
+
+    res = await fetch(`${base}/admin/run-assignment`, {
+      method: 'POST', headers: authHeaders, body: JSON.stringify({ regenerateLotteryNumbers: false }),
+    });
+    assert.strictEqual(res.status, 409, 'assignment requires trip-request mode');
+    res = await fetch(`${base}/mode`, {
+      method: 'PUT', headers: authHeaders, body: JSON.stringify({ mode: 'trip-request' }),
+    });
+    assert(res.ok, 'return to trip-request mode before allocation');
 
     res = await fetch(`${base}/admin/run-assignment`, {
       method: 'POST',

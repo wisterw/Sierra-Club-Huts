@@ -96,6 +96,19 @@ body {
   color: #fff;
 }
 
+.agreement-notice {
+  margin: 0.4rem 0;
+  line-height: 1.5;
+}
+.agreement-notice a, .app-footer a, .legal-document a { color: var(--accent); }
+.app-footer { display: flex; flex-wrap: wrap; gap: 1rem; margin: 1.25rem 0; }
+.legal-shell { max-width: 900px; }
+.legal-document { line-height: 1.65; overflow-wrap: anywhere; }
+.legal-document h1 { font-size: 1.8rem; }
+.legal-document h2 { font-size: 1.25rem; margin-top: 1.5rem; }
+.legal-document li { margin-bottom: 0.75rem; }
+#agreement-load-status:empty { display: none; }
+
 .tabs button:disabled {
   opacity: 0.5;
   cursor: not-allowed;

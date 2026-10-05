@@ -55,12 +55,12 @@ function buildSample() {
   return { requestors, requests };
 }
 
-function run() {
+async function run() {
   const { requestors, requests } = buildSample();
 
   const defaultRequestors = cloneRequestors(requestors);
   const defaultRequests = cloneRequests(requests);
-  runAssignment(defaultRequests, defaultRequestors, { seed: 'lottery-default' });
+  await runAssignment(defaultRequests, defaultRequestors, { seed: 'lottery-default' });
 
   assert.notStrictEqual(defaultRequestors.get(1).Lottery_value, 0.99, 'default assignment should regenerate lottery values');
   assert.notStrictEqual(defaultRequestors.get(2).Lottery_value, 0.01, 'default assignment should regenerate lottery values');
@@ -73,7 +73,7 @@ function run() {
 
   const preservedRequestors = cloneRequestors(requestors);
   const preservedRequests = cloneRequests(requests);
-  runAssignment(preservedRequests, preservedRequestors, {
+  await runAssignment(preservedRequests, preservedRequestors, {
     seed: 'lottery-default',
     regenerateLotteryNumbers: false,
   });
@@ -91,4 +91,4 @@ function run() {
   console.log('assignment lottery flag test passed.');
 }
 
-run();
+run().catch((error) => { console.error(error); process.exitCode = 1; });

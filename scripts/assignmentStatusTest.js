@@ -28,7 +28,7 @@ function requestRow(requestorId, choice, huts, ideal, min = ideal) {
   return row;
 }
 
-function run() {
+async function run() {
   const requestors = new Map([
     [1, requestor(1, 3)],
     [2, requestor(2, 2)],
@@ -40,7 +40,7 @@ function run() {
     requestRow(2, 1, ['Benson'], 1, 1),
   ];
 
-  runAssignment(requests, requestors, { seed: 'assignment-test' });
+  await runAssignment(requests, requestors, { seed: 'assignment-test' });
 
   const choice1 = requests.find((r) => r.Requestor_ID === 1 && r.Choice_Number === 1);
   const choice2 = requests.find((r) => r.Requestor_ID === 1 && r.Choice_Number === 2);
@@ -50,9 +50,9 @@ function run() {
   assert.strictEqual(choice2.Status, 'not-used');
   assert.strictEqual(secondUser.Status, 'lost-lottery');
   assert.match(choice1.Assignment_audit, /Granted/);
-  assert.match(secondUser.Assignment_audit, /No requested hut/);
+  assert.match(secondUser.Assignment_audit, /No choice selected/);
 
   console.log('assignment status test passed.');
 }
 
-run();
+run().catch((error) => { console.error(error); process.exitCode = 1; });

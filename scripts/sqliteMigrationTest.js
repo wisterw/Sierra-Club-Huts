@@ -3,6 +3,7 @@ const fs = require('fs');
 const os = require('os');
 const path = require('path');
 const { SqliteStore } = require('../src/data/sqliteStore');
+const { toTsv, REQUESTORS_HEADERS, REQUESTS_HEADERS } = require('../src/data/tsvStore');
 
 function makeTempDir() {
   return fs.mkdtempSync(path.join(os.tmpdir(), 'sierra-club-huts-'));
@@ -12,7 +13,11 @@ function run() {
   const tempDir = makeTempDir();
   const dbPath = path.join(tempDir, 'huts.sqlite');
 
-  const store = new SqliteStore({ dbPath });
+  const requestorsFile = path.join(tempDir, 'requestors.tsv');
+  const requestsFile = path.join(tempDir, 'requests.tsv');
+  fs.writeFileSync(requestorsFile, toTsv(REQUESTORS_HEADERS, [{ Requestor_ID: 1962792, Email: 'MIGRATION@EXAMPLE.COM', first_name: 'Migration', Credits: 1, Admin: 'FALSE' }]));
+  fs.writeFileSync(requestsFile, toTsv(REQUESTS_HEADERS, [{ Requestor_ID: 1962792, Benson: 'TRUE', Bradley: 'FALSE', Grubb: 'FALSE', Ludlow: 'FALSE', Arrival: '2026-12-20', Departure: '2026-12-22', Choice_Number: 1, Spots_ideal: 2, Spots_min: 1, Status: 'requested' }]));
+  const store = new SqliteStore({ dbPath, requestorsFile, requestsFile });
   const requestorCount = store.db.prepare('SELECT COUNT(*) AS c FROM requestors').get().c;
   const requestCount = store.db.prepare('SELECT COUNT(*) AS c FROM ski_trip_requests').get().c;
   assert(requestorCount > 0, 'expected imported requestors');

@@ -49,6 +49,9 @@ const PAGE_PATHS = {
 };
 let suspendedDraft = null;
 let sessionGeneration = 0;
+let agreementVersions = null;
+let agreementLoadGeneration = 0;
+let initialSessionChecked = false;
 
 function showSignIn(message = '', preserveDraft = false) {
   if (preserveDraft && state.me) {
@@ -72,6 +75,7 @@ function showSignIn(message = '', preserveDraft = false) {
   }
   el.loginCode.value = '';
   el.loginError.textContent = message;
+  loadLoginAgreements();
 }
 
 const ADMIN_SECTIONS = [
@@ -80,6 +84,7 @@ const ADMIN_SECTIONS = [
   { id: 'review-waivers', label: 'Review liability waivers' },
   { id: 'download-requests', label: 'Download requests' },
   { id: 'efficiency-report', label: 'Efficiency report' },
+  { id: 'existing-reservations', label: 'Existing reservations' },
   { id: 'setup-work-parties', label: 'Set up work parties' },
 ];
 
@@ -619,7 +624,7 @@ function renderProfile() {
           <option value="true" ${profile.Admin ? 'selected' : ''}>True</option>
         </select>
       </label>
-      <label>Credits<input type="number" name="Credits" ${isAdmin ? '' : 'disabled'} value="${profile.Credits}" /></label>
+      <label>Credits<input type="number" step="0.1" name="Credits" ${isAdmin ? '' : 'disabled'} value="${profile.Credits}" /></label>
       ${isAdmin ? `
         <div class="field-help-row">
           <label>Admin-only comments<textarea name="private_comments">${escapeHtml(profile.private_comments || '')}</textarea></label>
@@ -698,7 +703,7 @@ function renderProfile() {
     };
     if (isAdmin) {
       payload.Admin = fd.get('Admin') === 'true';
-      payload.Credits = Number(fd.get('Credits'));
+      payload.Credits = fd.get('Credits');
       payload.private_comments = fd.get('private_comments');
       payload.liability_waiver_date = fd.get('liability_waiver_date');
     }
@@ -918,8 +923,9 @@ function renderAvailability(container, choice) {
         td.classList.add('user-cell');
       }
 
-      td.title = `Capacity: ${stats.capacity}\nHigher-pri spots req.: ${oneDecimal(stats.higherPrioritySpots)}\nSame-pri spots req.: ${oneDecimal(stats.samePrioritySpots)}\nSame-priority groups: ${stats.samePriorityGroups}`;
+      td.title = `Existing reservations: ${oneDecimal(stats.existingReservationSpots)}\nCapacity: ${stats.capacity}\nHigher-pri spots req.: ${oneDecimal(stats.higherPrioritySpots)}\nSame-pri spots req.: ${oneDecimal(stats.samePrioritySpots)}\nSame-priority groups: ${stats.samePriorityGroups}`;
       td.textContent = oneDecimal(remAfterSame);
+      if (stats.existingReservationSpots) { td.textContent += ' (reserved)'; td.setAttribute('aria-label', `${hut} ${dayKey}: ${stats.existingReservationSpots} existing reservation beds, ${oneDecimal(remAfterSame)} remaining after demand`); }
       tr.appendChild(td);
     }
 
@@ -1567,6 +1573,42 @@ function wireAdminWorkPartyManagement() {
   }
 }
 
+function renderExistingReservations() {
+  return `<h3>Existing reservations</h3>
+    <p>Upload or paste tab-separated reservations. Each booking gets its own placeholder and priority over volunteer requests. Name identifies who or what the reservation is for. References update matching bookings; omitted bookings stay intact.</p>
+    <p>Required: Reservation_reference, Name, Hut, Arrival, Departure, Guests. Optional: Traverse_date, Notes. Dates use YYYY-MM-DD. Use Benson-&gt;Bradley or Bradley-&gt;Benson with a traverse date for combination trips. Checkout day is not occupied. Use the full hut capacity to reserve an entire hut.</p>
+    <a href="/api/admin/reservations/sample">Download reservation sample TSV</a>
+    <form id="reservation-upload-form"><label>Reservation TSV file<input type="file" name="file" accept=".tsv,text/tab-separated-values" required /></label><button type="submit">Upload reservations</button></form>
+    <form id="reservation-paste-form"><label>Paste reservation TSV<textarea id="reservation-tsv" rows="7" required></textarea></label><button type="submit">Import pasted reservations</button></form>
+    <div id="reservation-message" role="status" aria-live="polite">${escapeHtml(state.reservationMessage || '')}</div>
+    <div class="profile-history-table-wrap"><table class="availability"><thead><tr><th>Reference</th><th>Name</th><th>Hut(s)</th><th>Check-in</th><th>Traverse</th><th>Check-out</th><th>Guests</th><th>Notes</th><th>Action</th></tr></thead><tbody>${(state.reservations || []).map((b) => {
+      const rows = b.requests.slice().sort((a,b) => a.Arrival.localeCompare(b.Arrival));
+      return `<tr><td>${escapeHtml(b.Reservation_reference)}</td><td>${escapeHtml(b.Name)}</td><td>${escapeHtml(rows.map((r) => HUTS.filter((h) => r[h]).join(', ')).join(' ? '))}</td><td>${escapeHtml(rows[0]?.Arrival || '')}</td><td>${escapeHtml(rows.length === 2 ? rows[0].Departure : '')}</td><td>${escapeHtml(rows.at(-1)?.Departure || '')}</td><td>${Number(rows[0]?.Spots_ideal || 0)}</td><td>${escapeHtml(b.Notes)}</td><td><button type="button" data-remove-reservation="${escapeHtml(b.Reservation_reference)}">Remove</button></td></tr>`;
+    }).join('')}</tbody></table></div>`;
+}
+function wireExistingReservations() {
+  for (const id of ['reservation-upload-form', 'reservation-paste-form']) {
+    document.getElementById(id)?.addEventListener('submit', async (event) => {
+      event.preventDefault();
+      const button = event.currentTarget.querySelector('button'); button.disabled = true;
+      const msg = document.getElementById('reservation-message'); msg.textContent = 'Importing reservations?';
+      try {
+        const body = id === 'reservation-upload-form' ? new FormData(event.currentTarget) : { tsv: document.getElementById('reservation-tsv').value };
+        const result = await api('/admin/reservations', { method: 'POST', body });
+        state.reservationMessage = `Import complete: ${result.created} created, ${result.updated} updated.`;
+        await renderAdmin();
+      } catch (error) { msg.textContent = error.message; button.disabled = false; }
+    });
+  }
+  for (const button of document.querySelectorAll('[data-remove-reservation]')) button.addEventListener('click', async () => {
+    if (!window.confirm('Remove this existing reservation and release its reserved capacity?')) return;
+    button.disabled = true;
+    try {
+      await api(`/admin/reservations/${encodeURIComponent(button.dataset.removeReservation)}`, { method: 'DELETE' });
+      state.reservationMessage = 'Reservation removed.'; await renderAdmin();
+    } catch (error) { document.getElementById('reservation-message').textContent = error.message; button.disabled = false; }
+  });
+}
 async function renderAdmin() {
   if (!state.me?.Admin) {
     el.tabAdmin.replaceChildren();
@@ -1577,6 +1619,9 @@ async function renderAdmin() {
     state.adminSection = 'application-settings';
   }
 
+  if (state.adminSection === 'existing-reservations') {
+    state.reservations = (await api('/admin/reservations')).rows;
+  }
   if (state.adminSection === 'manage-volunteers') {
     await loadVolunteerManagement().catch(() => {
       state.volunteerRows = [];
@@ -1653,6 +1698,7 @@ async function renderAdmin() {
           </div>
         </div>
       </div>
+      <div class="admin-section ${state.adminSection === 'existing-reservations' ? '' : 'hidden'}" data-admin-panel="existing-reservations">${state.adminSection === 'existing-reservations' ? renderExistingReservations() : ''}</div>
       <div class="admin-section ${state.adminSection === 'efficiency-report' ? '' : 'hidden'}" data-admin-panel="efficiency-report">
         <div class="kpi-card">
           <h3>Efficiency Report</h3>
@@ -1685,6 +1731,7 @@ async function renderAdmin() {
     wireAdminWorkPartyManagement();
   }
 
+  if (state.adminSection === 'existing-reservations') wireExistingReservations();
   const saveModeBtn = document.getElementById('save-mode');
   if (saveModeBtn) saveModeBtn.addEventListener('click', async () => {
     try {
@@ -1709,11 +1756,16 @@ async function renderAdmin() {
   const regenerateLottery = document.getElementById('regenerate-lottery');
   const runAssignmentBtn = document.getElementById('run-assignment');
   if (runAssignmentBtn) runAssignmentBtn.addEventListener('click', async () => {
-    const data = await api('/admin/run-assignment', {
-      method: 'POST',
-      body: { regenerateLotteryNumbers: regenerateLottery.checked },
-    });
-    document.getElementById('assign-msg').textContent = data.message;
+    runAssignmentBtn.disabled = true;
+    document.getElementById('assign-msg').textContent = 'Finding the best allocation…';
+    try {
+      const data = await api('/admin/run-assignment', {
+        method: 'POST', body: { regenerateLotteryNumbers: regenerateLottery.checked },
+      });
+      document.getElementById('assign-msg').textContent = data.message;
+    } catch (error) {
+      document.getElementById('assign-msg').textContent = `Assignment was not saved: ${error.message}`;
+    } finally { runAssignmentBtn.disabled = false; }
   });
 
   const regenerateLotteryBtn = document.getElementById('regenerate-lottery-btn');
@@ -1731,6 +1783,11 @@ async function renderAdmin() {
           .map((r) => `<tr><td>${r.outcome || r.choice}</td><td>${r.groupsPercent}</td><td>${r.spotsPercent}</td></tr>`)
           .join('')}</tbody></table>`
       : '<p>No granted assignments yet.</p>';
+    if (data.allocationSummary) {
+      const summary = data.allocationSummary;
+      const scores = summary.scores.map((s) => `${s.credits} credits: ${s.score}`).join('; ');
+      document.getElementById('eff-table').insertAdjacentHTML('beforeend', `<p>${summary.stale ? 'Saved allocation summary is out of date.' : 'Optimal allocation summary.'} ${escapeHtml(summary.personNights)} person-nights.${summary.placeholderBookings ? ` Existing reservations: ${Number(summary.placeholderBookings)} bookings, ${Number(summary.placeholderPersonNights)} person-nights; volunteer grants: ${Number(summary.personNights) - Number(summary.placeholderPersonNights)} person-nights.` : ''} Choice scores (unassigned = 10): ${escapeHtml(scores)}. Completed in ${escapeHtml((summary.elapsedMs / 1000).toFixed(2))} seconds.</p>`);
+    }
   });
 
 }
@@ -1778,23 +1835,46 @@ function removeLoginCredentials() {
   history.replaceState(null, '', location.pathname + (query ? `?${query}` : '') + location.hash);
 }
 
-async function tryAutoLoginFromUrl() {
+function prefillLoginFromUrl() {
   const params = new URLSearchParams(location.search);
   const email = params.get('email');
   const code = params.get('code') || params.get('hash');
-  try {
-    if (!email || !code) return false;
+  if (email && code) {
     el.loginEmail.value = email;
-    el.loginCode.value = code;
-    await api('/check-login', { method: 'POST', body: { email, code: Number(code) } });
-    await loadMeAndRender();
-    return true;
-  } finally {
-    removeLoginCredentials();
+    el.loginCode.value = String(code).replace(/\D/g, '').slice(0, 4);
+  }
+  removeLoginCredentials();
+}
+
+async function loadLoginAgreements() {
+  const generation = ++agreementLoadGeneration;
+  const button = document.getElementById('sign-in-btn');
+  const status = document.getElementById('agreement-load-status');
+  const retry = document.getElementById('retry-agreements');
+  agreementVersions = null;
+  button.disabled = true;
+  status.textContent = 'Loading agreements…';
+  retry.classList.add('hidden');
+  try {
+    const response = await fetch('/api/agreements', { cache: 'no-store' });
+    if (!response.ok) throw new Error('Agreement metadata is unavailable.');
+    const metadata = await response.json();
+    if (!['termsOfUse', 'privacyPolicy'].every((kind) => /^[a-f0-9]{64}$/.test(metadata[kind]?.version || ''))) {
+      throw new Error('Agreement metadata is incomplete.');
+    }
+    if (generation !== agreementLoadGeneration) return;
+    agreementVersions = { termsOfUse: metadata.termsOfUse.version, privacyPolicy: metadata.privacyPolicy.version };
+    button.disabled = !initialSessionChecked;
+    status.textContent = '';
+  } catch {
+    if (generation !== agreementLoadGeneration) return;
+    status.textContent = 'We could not load the current agreements. Please retry before signing in.';
+    retry.classList.remove('hidden');
   }
 }
 
 function wireLogin() {
+  document.getElementById('retry-agreements').addEventListener('click', loadLoginAgreements);
   el.sendLoginCode.addEventListener('click', async () => {
     el.loginError.textContent = '';
     try {
@@ -1814,16 +1894,22 @@ function wireLogin() {
 
   el.loginForm.addEventListener('submit', async (e) => {
     e.preventDefault();
+    const button = document.getElementById('sign-in-btn');
+    if (!initialSessionChecked || !agreementVersions || button.disabled) return;
+    button.disabled = true;
     el.loginError.textContent = '';
     try {
       const cleaned = String(el.loginCode.value || '').replace(/\D/g, '');
       await api('/check-login', {
         method: 'POST',
-        body: { email: el.loginEmail.value, code: Number(cleaned) },
+        body: { email: el.loginEmail.value, code: Number(cleaned), agreementVersions: { ...agreementVersions } },
       });
       await loadMeAndRender();
     } catch (err) {
       el.loginError.textContent = err.message;
+      if (err.status === 409) await loadLoginAgreements();
+    } finally {
+      button.disabled = !agreementVersions;
     }
   });
 }
@@ -1832,6 +1918,8 @@ async function init() {
   wireTabs();
   wireLogin();
   wireContextualHelp();
+  prefillLoginFromUrl();
+  loadLoginAgreements();
 
   try {
     await loadMeAndRender();
@@ -1843,13 +1931,11 @@ async function init() {
       removeLoginCredentials();
       return;
     }
+  } finally {
+    initialSessionChecked = true;
+    document.getElementById('sign-in-btn').disabled = !agreementVersions;
   }
 
-  try {
-    await tryAutoLoginFromUrl();
-  } catch (err) {
-    el.loginError.textContent = err.message;
-  }
 }
 
 init().catch(reportAppError);

@@ -1,0 +1,111 @@
+const assert = require('assert');
+const fs = require('fs');
+const os = require('os');
+const path = require('path');
+const express = require('express');
+
+async function main() {
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'huts-allocation-'));
+  process.env.DATABASE_FILE = path.join(dir, 'api.sqlite');
+  process.env.WAIVER_STORAGE_DIR = path.join(dir, 'waivers');
+  process.env.NODE_ENV = 'test';
+  const { SqliteStore } = require('../src/data/sqliteStore');
+  const { captureAllocation, commitAllocation, latestAllocation } = require('../src/data/allocationRepository');
+  const { runAssignment } = require('../src/services/assignment');
+  let now = '2026-10-05T00:00:00Z';
+  const store = new SqliteStore({ importTsv: false, clock: () => now });
+  const admin = store.upsertRequestor({ Email: 'allocation-admin@example.org', Admin: true, Credits: 3, Lottery_value: 0.5 });
+  const user = store.upsertRequestor({ Email: 'allocation-user@example.org', Credits: 2, Lottery_value: 0.1 });
+  const row = (minimum, ideal = minimum, extra = {}) => ({ Benson: true, Arrival: '2026-12-20', Departure: '2026-12-22', Choice_Number: 1, Spots_min: minimum, Spots_ideal: ideal, ...extra });
+  store.replaceRequestsForRequestor(admin.Requestor_ID, [row(4, 12)]);
+  store.replaceRequestsForRequestor(user.Requestor_ID, [row(4), row(1, 1, { Choice_Number: 2, Arrival: '2025-12-20', Departure: '2025-12-22' })]);
+  store.setApplicationMode('trip-request');
+  store.alerts.initialize();
+  const notifications = () => JSON.stringify(store.db.prepare('SELECT * FROM contention_alert_recipients').all());
+  const originalNotifications = notifications();
+  const originalOtherSeason = store.listRequests().find((r) => r.Arrival.startsWith('2025'));
+  const contention = () => store.listRequests().map((r) => [r.Request_ID, r.contention_status, r.contention_status_changed_at, r.contention_email_sent_at]);
+  const originalContention = contention();
+  async function solve(snapshot) { return runAssignment(snapshot.requests, new Map(snapshot.requestors.map((p) => [p.Requestor_ID, p])), { seed: 'persist' }); }
+  try {
+    const snapshot = captureAllocation(store, 2026);
+    const result = await solve(snapshot);
+    const before = store.listRequests(); const oldLottery = store.listRequestors({ includePrivate: true }).map((p) => p.Lottery_value);
+    store.db.exec("CREATE TRIGGER fail_run BEFORE INSERT ON allocation_runs BEGIN SELECT RAISE(ABORT, 'atomic run failure'); END;");
+    assert.throws(() => commitAllocation(store, snapshot, snapshot.requests, result), /atomic run failure/);
+    assert.deepEqual(store.listRequests(), before);
+    assert.deepEqual(store.listRequestors({ includePrivate: true }).map((p) => p.Lottery_value), oldLottery);
+    store.db.exec('DROP TRIGGER fail_run');
+    const summary = commitAllocation(store, snapshot, snapshot.requests, result);
+    assert.equal(summary.status, 'Optimal'); assert.equal(summary.personNights, 24);
+    assert.equal(latestAllocation(store).stale, false);
+    const { POLICY_VERSION } = require('../src/services/allocationModel');
+    assert.equal(summary.policyVersion, POLICY_VERSION);
+    const grantsBeforePolicyChange = store.listRequests();
+    const saved = store.db.prepare('SELECT * FROM allocation_runs WHERE run_id = ?').get(summary.runId);
+    const earlierSummary = { ...JSON.parse(saved.summary), policyVersion: 'credit-rank-person-nights-v1' };
+    store.db.prepare('UPDATE allocation_runs SET summary = ? WHERE run_id = ?').run(JSON.stringify(earlierSummary), summary.runId);
+    const earlierRecord = store.db.prepare('SELECT * FROM allocation_runs WHERE run_id = ?').get(summary.runId);
+    const earlierReport = latestAllocation(store);
+    assert.equal(earlierReport.stale, true, 'unchanged inputs still become stale after a policy change');
+    assert.equal(earlierReport.policyVersion, earlierSummary.policyVersion);
+    assert.deepEqual(earlierReport.scores, summary.scores);
+    assert.equal(earlierReport.personNights, summary.personNights);
+    assert.deepEqual(store.listRequests(), grantsBeforePolicyChange, 'reading an old-policy report never reassigns grants');
+    const rerun = captureAllocation(store, 2026);
+    const fresh = commitAllocation(store, rerun, rerun.requests, await solve(rerun));
+    assert.equal(fresh.policyVersion, POLICY_VERSION);
+    assert.equal(latestAllocation(store).stale, false);
+    assert.deepEqual(store.db.prepare('SELECT * FROM allocation_runs WHERE run_id = ?').get(summary.runId), earlierRecord, 'a deliberate rerun preserves historical policy and metrics');
+    assert.deepEqual(store.listRequests().find((r) => r.Arrival.startsWith('2025')), originalOtherSeason);
+    assert.deepEqual(contention(), originalContention);
+    assert.equal(notifications(), originalNotifications);
+    assert.throws(() => commitAllocation(store, snapshot, snapshot.requests, result), /inputs changed/, 'an older concurrent run cannot overwrite the committed run');
+    const stale = captureAllocation(store, 2026);
+    const staleResult = await solve(stale);
+    store.updateRequestorById(user.Requestor_ID, { Credits: 2.1 }, { allowAdminFields: true, actorId: admin.Requestor_ID });
+    assert.throws(() => commitAllocation(store, stale, stale.requests, staleResult), /inputs changed/);
+    assert.equal(latestAllocation(store).stale, true);
+    const profilesBefore = store.listRequestors({ includePrivate: true });
+    const requestsBefore = store.listRequests();
+    const failed = captureAllocation(store, 2026);
+    await assert.rejects(() => runAssignment(failed.requests, new Map(failed.requestors.map((p) => [p.Requestor_ID, p])), { timeoutMs: 1 }), /timed out/);
+    assert.deepEqual(store.listRequestors({ includePrivate: true }), profilesBefore);
+    assert.deepEqual(store.listRequests(), requestsBefore);
+  } finally { store.close(); }
+  // Restart and authenticated routes, including mode and timeout failures.
+  const { apiRouter, store: apiStore } = require('../src/routes/api');
+  const app = express(); app.use(express.json());
+  app.use((req, _res, next) => { req.session = { userId: Number(req.headers['x-test-user']) }; next(); });
+  app.use('/api', apiRouter);
+  const server = app.listen(0, '127.0.0.1'); await new Promise((resolve) => server.once('listening', resolve));
+  const base = `http://127.0.0.1:${server.address().port}/api`;
+  const headers = { 'Content-Type': 'application/json', 'x-test-user': String(admin.Requestor_ID) };
+  try {
+    const denied = await fetch(`${base}/admin/run-assignment`, { method: 'POST', headers: { ...headers, 'x-test-user': String(user.Requestor_ID) }, body: '{}' });
+    assert.equal(denied.status, 403);
+    apiStore.setApplicationMode('inactive');
+    assert.equal((await fetch(`${base}/admin/run-assignment`, { method: 'POST', headers, body: '{}' })).status, 409);
+    apiStore.setApplicationMode('trip-request');
+    process.env.ALLOCATION_TIMEOUT_MS = '1';
+    const unchanged = apiStore.listRequests();
+    const timeout = await fetch(`${base}/admin/run-assignment`, { method: 'POST', headers, body: '{}' });
+    assert.equal(timeout.status, 503); assert.deepEqual(apiStore.listRequests(), unchanged);
+    delete process.env.ALLOCATION_TIMEOUT_MS;
+    // Fixture dates follow the API's current-year scope, even when run later.
+    const year = new Date().getFullYear();
+    apiStore.replaceRequestsForRequestor(admin.Requestor_ID, [row(4, 12, { Arrival: `${year}-12-20`, Departure: `${year}-12-22` })]);
+    apiStore.replaceRequestsForRequestor(user.Requestor_ID, [row(4, 4, { Arrival: `${year}-12-20`, Departure: `${year}-12-22` })]);
+    const assigned = await fetch(`${base}/admin/run-assignment`, { method: 'POST', headers, body: '{"regenerateLotteryNumbers":false}' });
+    assert.equal(assigned.status, 200); const body = await assigned.json(); assert.equal(body.summary.status, 'Optimal');
+    const report = await (await fetch(`${base}/admin/efficiency-report`, { headers })).json();
+    assert(Array.isArray(report.rows)); assert.equal(report.allocationSummary.stale, false);
+    apiStore.updateRequestorById(user.Requestor_ID, { city: 'Unrelated city' });
+    assert.equal(latestAllocation(apiStore).stale, false);
+    const current = apiStore.getRequestsByRequestorId(user.Requestor_ID);
+    apiStore.replaceRequestsForRequestor(user.Requestor_ID, current.map((r) => ({ ...r, Spots_min: 3 })), { actorId: user.Requestor_ID });
+    assert.equal(latestAllocation(apiStore).stale, true);
+    console.log('Allocation persistence/API tests passed: rollback, concurrency, scope, unchanged alerts, restart, authorization and reports.');
+  } finally { delete process.env.ALLOCATION_TIMEOUT_MS; await new Promise((resolve) => server.close(resolve)); apiStore.close(); }
+}
+main().catch((error) => { console.error(error); process.exitCode = 1; });

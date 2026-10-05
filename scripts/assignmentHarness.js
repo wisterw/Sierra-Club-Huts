@@ -102,11 +102,11 @@ function summarize(requests) {
   return rows;
 }
 
-function run() {
+async function run() {
   const { requestors, requests } = buildSample();
   const seed = process.argv[2];
-  runAssignment(requests, requestors, { seed });
+  await runAssignment(requests, requestors, { seed });
   console.table(summarize(requests));
 }
 
-run();
+run().catch((error) => { console.error(error); process.exitCode = 1; });

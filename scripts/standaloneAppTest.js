@@ -20,7 +20,7 @@ async function run() {
   const dbPath = path.join(dir, 'huts.sqlite');
   const store = new SqliteStore({ dbPath, importTsv: false });
   const accounts = [
-    { Email: 'FIRST@EXAMPLE.COM', first_name: 'First', last_name: 'Volunteer', Admin: false, Credits: 1 },
+    { Email: 'FIRST@EXAMPLE.COM', first_name: 'First', last_name: 'Volunteer', Admin: false, Credits: 1.5 },
     { Email: 'SECOND@EXAMPLE.COM', first_name: 'Second', last_name: 'Volunteer', Admin: false, Credits: 1 },
     { Email: 'ADMIN@EXAMPLE.COM', first_name: 'Hut', last_name: 'Coordinator', Admin: true, Credits: 1 },
   ].map((account) => store.upsertRequestor(account));
@@ -47,7 +47,11 @@ async function run() {
     const context = await browser.newContext({ viewport: { width: 1280, height: 900 } });
     const page = await context.newPage();
     const errors = [];
+    let codeSubmissions = 0;
     page.on('pageerror', (error) => errors.push(error.message));
+    page.on('request', (request) => {
+      if (request.url() === `${origin}/api/check-login` && request.method() === 'POST') codeSubmissions += 1;
+    });
     async function signedIn(tab = 'profile') {
       await expect(page.locator('#main-app')).toBeVisible();
       await expect(page.locator(`.tabs button[data-tab="${tab}"]`)).toHaveAttribute('aria-current', 'page');
@@ -58,8 +62,31 @@ async function run() {
       await page.locator('#login-form button[type="submit"]').click();
       await signedIn(tab);
     }
+    async function logout() {
+      await Promise.all([
+        page.waitForResponse((response) => response.url() === `${origin}/api/logout` && response.request().method() === 'POST'),
+        page.locator('#logout-btn').click(),
+      ]);
+      await expect(page).toHaveURL(`${origin}/`);
+      await expect(page.locator('#login-card')).toBeVisible();
+    }
     async function screenshot(name) {
       await page.screenshot({ path: path.join(dir, `${name}.png`), fullPage: true });
+    }
+    async function agreementPopup(link, kind) {
+      const [popup] = await Promise.all([page.waitForEvent('popup'), link.click()]);
+      const sourceFile = kind === 'terms' ? 'TERMS OF USE.md' : 'PRIVACY POLICY.md';
+      const source = fs.readFileSync(path.join(__dirname, '..', 'openspec', 'specs', sourceFile), 'utf8');
+      const normalizeText = (value) => value.replace(/^\uFEFF/, '').replace(/^\s*•\s*/gm, '').replace(/\s+/g, ' ').trim();
+      await expect(popup.locator('.legal-document')).toBeVisible();
+      assert.strictEqual(normalizeText(await popup.locator('.legal-document').innerText()), normalizeText(source), 'public page must preserve the complete supplied text');
+      await expect(popup.locator('#login-form')).toHaveCount(0);
+      await popup.setViewportSize({ width: 360, height: 800 });
+      assert(await popup.evaluate(() => document.documentElement.scrollWidth <= innerWidth));
+      await popup.screenshot({ path: path.join(dir, `mobile-${kind}.png`), fullPage: true });
+      await popup.setViewportSize({ width: 1280, height: 900 });
+      await popup.screenshot({ path: path.join(dir, `desktop-${kind}.png`), fullPage: true });
+      await popup.close();
     }
     async function fitsViewport() {
       const sizes = await page.evaluate(() => ({ actual: document.documentElement.scrollWidth, viewport: innerWidth }));
@@ -76,9 +103,19 @@ async function run() {
       await expect(page.locator('#session-info')).toBeEmpty();
     }
 
+    await page.route('**/api/agreements', (route) => route.fulfill({ status: 503, json: { error: 'Test metadata outage' } }));
     await page.goto(`${origin}/profile`);
     await expect(page.locator('#login-card')).toBeVisible();
+    await expect(page.locator('#agreement-load-status')).toContainText('Please retry');
+    await expect(page.locator('#sign-in-btn')).toBeDisabled();
+    await page.unroute('**/api/agreements');
+    await page.locator('#retry-agreements').click();
+    await expect(page.locator('#sign-in-btn')).toBeEnabled();
     await expect(page.locator('#login-card')).toContainText('not confirmed reservations');
+    await expect(page.locator('#login-agreement-notice')).toHaveText('By entering your code and logging in, you explicitly acknowledge that you have read and agree to our Privacy Policy and Terms of Use, including the Backcountry Assumption of Risk and absolute limitation of liability.');
+    await expect(page.locator('#login-code')).toHaveAttribute('aria-describedby', 'login-agreement-notice');
+    await expect(page.locator('#sign-in-btn')).toHaveAttribute('aria-describedby', 'login-agreement-notice');
+    await screenshot('desktop-sign-in');
     await page.setViewportSize({ width: 360, height: 800 });
     await fitsViewport();
     await screenshot('mobile-sign-in');
@@ -88,10 +125,31 @@ async function run() {
     await page.locator('#login-email').fill(accounts[0].Email);
     await page.locator('#send-login-code').click();
     await expect(page.locator('#login-error')).toContainText('If we have the email on file');
+    await page.locator('#login-code').fill('1234');
+    await agreementPopup(page.locator('#login-agreement-notice a[href="/terms-of-use"]'), 'terms');
+    await agreementPopup(page.locator('#login-agreement-notice a[href="/privacy-policy"]'), 'privacy');
+    await expect(page.locator('#login-code')).toHaveValue('1234');
+    await expect(page).toHaveURL(`${origin}/profile`);
+    assert.strictEqual(codeSubmissions, 0, 'requesting a code, reading agreements, and typing must not submit login');
+    const agreementReader = new SqliteStore({ dbPath, importTsv: false });
+    assert.strictEqual(agreementReader.db.prepare('SELECT COUNT(*) AS count FROM requestor_agreement_acknowledgements').get().count, 0);
+    agreementReader.close();
+    // Inject stale versions once. The actual server must reject them; the form must not auto-resubmit.
+    await page.route('**/api/check-login', async (route) => {
+      const body = route.request().postDataJSON();
+      body.agreementVersions.termsOfUse = '0'.repeat(64);
+      await route.continue({ postData: JSON.stringify(body) });
+    }, { times: 1 });
+    await page.locator('#login-code').press('Enter');
+    await expect(page.locator('#login-error')).toContainText('agreements have changed');
+    await expect(page.locator('#sign-in-btn')).toBeEnabled();
+    await expect(page.locator('#main-app')).toBeHidden();
+    assert.strictEqual(codeSubmissions, 1);
     await login();
     await expect(page).toHaveURL(`${origin}/profile`);
     await fitsViewport();
     await screenshot('mobile-profile');
+    await expect(page.locator('.app-footer a')).toHaveCount(2);
     await page.reload();
     await signedIn();
     await page.goto(`${origin}/profile?email=${accounts[0].Email}&code=1234`);
@@ -114,6 +172,8 @@ async function run() {
     await page.keyboard.press('Enter');
     await signedIn();
     await screenshot('desktop-profile');
+    await expect(page.locator('[name="Credits"]')).toBeDisabled();
+    await expect(page.locator('[name="Credits"]')).toHaveValue('1.5');
     for (const url of ['/admin', '/work-parties', '/unknown']) {
       await page.goto(origin + url);
       await signedIn('trip-request');
@@ -137,6 +197,7 @@ async function run() {
     await expect(page.locator('[data-k="spotsIdeal"]')).toHaveValue('3');
     await page.locator('[data-k="spotsIdeal"]').fill('5');
     await expireSession();
+    await agreementPopup(page.locator('#login-agreement-notice a[href="/terms-of-use"]'), 'terms');
     await login(accounts[0], 'trip-request');
     await expect(page.locator('[data-k="spotsIdeal"]')).toHaveValue('5');
     let reader = new SqliteStore({ dbPath, importTsv: false });
@@ -145,18 +206,27 @@ async function run() {
     await expireSession();
     await login(accounts[1], 'trip-request');
     await expect(page.locator('[data-k="spotsIdeal"]')).not.toHaveValue('5');
-    await page.locator('#logout-btn').click();
+    await logout();
     await expect(page).toHaveURL(`${origin}/`);
     await expect(page.locator('#main-app')).toBeHidden();
     await page.goto(`${origin}/profile?email=${accounts[0].Email}&code=1234`);
+    const submissionsBeforeLegacy = codeSubmissions;
+    await expect(page.locator('#login-code')).toHaveValue('1234');
+    await expect(page.locator('#main-app')).toBeHidden();
+    await expect(page).toHaveURL(`${origin}/profile`);
+    assert.strictEqual(codeSubmissions, submissionsBeforeLegacy);
+    await page.locator('#sign-in-btn').click();
     await signedIn();
     await expect(page).toHaveURL(`${origin}/profile`);
-    await page.locator('#logout-btn').click();
+    await logout();
     await page.goto(`${origin}/profile?email=${accounts[1].Email}&hash=1234`);
+    await expect(page.locator('#main-app')).toBeHidden();
+    await page.locator('#sign-in-btn').click();
     await signedIn();
     await expect(page).toHaveURL(`${origin}/profile`);
-    await page.locator('#logout-btn').click();
+    await logout();
     await page.goto(`${origin}/profile?email=MISSING%40EXAMPLE.COM&code=9999`);
+    await page.locator('#sign-in-btn').click();
     await expect(page.locator('#login-error')).not.toBeEmpty();
     await expect(page).toHaveURL(`${origin}/profile`);
     await page.goto(`${origin}/profile?returnTo=https://example.com`);
@@ -181,7 +251,7 @@ async function run() {
     await expect(page.locator('#login-card')).toBeVisible();
     await expect(page.locator('#tab-profile')).toBeEmpty();
     await login(accounts[0]);
-    await page.locator('#logout-btn').click();
+    await logout();
 
     await page.goto(`${origin}/admin`);
     await login(accounts[2], 'admin');
@@ -203,8 +273,18 @@ async function run() {
       await signedIn(tab);
       await page.goto(`${origin}/profile`);
       await signedIn();
+      const credits = page.locator('[name="Credits"]');
+      await expect(credits).toBeEnabled();
+      await expect(credits).toHaveAttribute('step', '0.1');
+      await credits.fill('1.25');
+      assert.strictEqual(await credits.evaluate((input) => input.checkValidity()), false);
+      await credits.fill('2.5');
+      await page.locator('#profile-form button[type="submit"]').click();
+      await expect(page.locator('#profile-msg')).toHaveText('Saved.');
       await page.reload();
       await signedIn();
+      await expect(page.locator('[name="Credits"]')).toHaveValue('2.5');
+      await screenshot(`fractional-credits-${mode}`);
     }
     assert.deepStrictEqual(errors, [], `unexpected browser errors: ${errors.join(', ')}`);
     console.log('Standalone browser test passed: navigation, modes, authentication, draft ownership, save/reload, and mobile layout.');

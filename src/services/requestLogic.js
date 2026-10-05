@@ -1,3 +1,4 @@
+const { effectiveRequestors } = require('./placeholderPriority');
 const { HUTS, HUT_CAPACITY } = require('../config');
 const { dateRangeNights, toIsoDate, winterSeasonBoundsForDate } = require('./dates');
 
@@ -86,7 +87,8 @@ function validateRequestSet(requests = []) {
   return null;
 }
 
-function summarizeByChoice(requests, choiceNumber, excludeRequestorId, requestorsById = new Map()) {
+function summarizeByChoice(requests, choiceNumber, excludeRequestorId, requestorsById = new Map(), requestCoverage = null) {
+  requestorsById = effectiveRequestors(requestorsById);
   const choice = Number(choiceNumber);
   const excludeId = excludeRequestorId ? Number(excludeRequestorId) : null;
   const summary = {};
@@ -100,9 +102,9 @@ function summarizeByChoice(requests, choiceNumber, excludeRequestorId, requestor
   const baseCredits = excludeId ? getCredits(excludeId) : 0;
 
   for (const req of requests) {
-    const huts = hutsForRequest(req);
+    const huts = requestCoverage?.get(req)?.huts || hutsForRequest(req);
     if (!huts.length) continue;
-    const nights = dateRangeNights(req.Arrival, req.Departure);
+    const nights = requestCoverage?.get(req)?.nights || dateRangeNights(req.Arrival, req.Departure);
     const splitIdeal = Number(req.Spots_ideal) / huts.length;
     const splitMin = Number(req.Spots_min || req.Spots_ideal) / huts.length;
     const reqCredits = getCredits(req.Requestor_ID);
@@ -122,12 +124,14 @@ function summarizeByChoice(requests, choiceNumber, excludeRequestorId, requestor
             date,
             hut,
             capacity: HUT_CAPACITY[hut],
+            existingReservationSpots: 0,
             higherPrioritySpots: 0,
             samePrioritySpots: 0,
             samePriorityGroups: new Set(),
           };
         }
 
+        if (requestorsById.get(Number(req.Requestor_ID))?.Is_placeholder && !isExcluded) summary[key].existingReservationSpots += splitIdeal;
         if (isHigherSameCredits || isHigherCreditsFirstChoice) {
           summary[key].higherPrioritySpots += splitIdeal;
         }
@@ -144,6 +148,7 @@ function summarizeByChoice(requests, choiceNumber, excludeRequestorId, requestor
     date: row.date,
     hut: row.hut,
     capacity: row.capacity,
+    ...(row.existingReservationSpots ? { existingReservationSpots: row.existingReservationSpots } : {}),
     higherPrioritySpots: Number(row.higherPrioritySpots.toFixed(1)),
     samePrioritySpots: Number(row.samePrioritySpots.toFixed(1)),
     samePriorityGroups: row.samePriorityGroups.size,

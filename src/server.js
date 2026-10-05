@@ -2,12 +2,17 @@ const express = require('express');
 const path = require('path');
 const session = require('express-session');
 const { apiRouter, store } = require('./routes/api');
+const { documents, renderAgreementPage } = require('./services/agreements');
+const { validateLoginEmailConfiguration } = require('./services/auth');
+const { startContentionAlertScheduler } = require('./services/contentionAlertWorker');
 
 const app = express();
 const port = Number(process.env.PORT || 3000);
 const isProduction = process.env.NODE_ENV === 'production';
 const trustProxy = process.env.TRUST_PROXY === '1';
 const sessionSecret = process.env.SESSION_SECRET || (isProduction ? '' : 'dev-only-change-me');
+validateLoginEmailConfiguration();
+const stopContentionAlerts = startContentionAlertScheduler(store);
 
 if (isProduction && !sessionSecret) {
   throw new Error('SESSION_SECRET must be set when NODE_ENV=production.');
@@ -33,6 +38,12 @@ app.use(
   })
 );
 
+for (const document of Object.values(documents)) {
+  app.get(document.path, (_req, res) => {
+    res.set('Cache-Control', 'no-store').type('html').send(renderAgreementPage(document));
+  });
+}
+
 app.use('/api', apiRouter);
 app.use(express.static(path.join(__dirname, '..', 'public')));
 
@@ -41,10 +52,12 @@ app.get('*', (_req, res) => {
 });
 
 process.on('SIGINT', () => {
+  stopContentionAlerts();
   store.flush(true);
   process.exit(0);
 });
 process.on('SIGTERM', () => {
+  stopContentionAlerts();
   store.flush(true);
   process.exit(0);
 });

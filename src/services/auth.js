@@ -1,5 +1,39 @@
 const fs = require('fs');
 
+const LOGIN_EMAIL_NOTICE = 'By using this code to log into the web app, you agree to our Terms of Use and Privacy Policy. Because these requests are for backcountry ski huts, logging in constitutes your explicit acceptance of the inherent risks of backcountry travel (such as avalanche, hypothermia, and lack of emergency services) and our volunteer limitation of liability.';
+
+function appPublicOrigin(environment = process.env) {
+  const configured = environment.APP_PUBLIC_URL;
+  if (!configured && environment.NODE_ENV === 'production') {
+    throw new Error('APP_PUBLIC_URL must be configured for production login emails.');
+  }
+  const value = configured || `http://localhost:${environment.PORT || 3000}`;
+  let url;
+  try { url = new URL(value); } catch { throw new Error('APP_PUBLIC_URL must be an absolute application origin.'); }
+  if (/\s/.test(value) || !['http:', 'https:'].includes(url.protocol) || url.username || url.password || url.search || url.hash || url.pathname !== '/' ||
+      (environment.NODE_ENV === 'production' && url.protocol !== 'https:')) {
+    throw new Error('APP_PUBLIC_URL must be an application origin without a path, query, credentials, or fragment, using HTTPS in production.');
+  }
+  return url.origin;
+}
+
+function validateLoginEmailConfiguration(environment = process.env) {
+  if (environment.APP_PUBLIC_URL || (environment.NODE_ENV === 'production' && fs.existsSync(environment.MSMTP_PATH || '/usr/bin/msmtp'))) {
+    appPublicOrigin(environment);
+  }
+}
+
+function composeLoginCodeEmail(email, code, environment = process.env) {
+  const origin = appPublicOrigin(environment);
+  const message = {
+    to: email,
+    subject: 'Sierra Club Huts login code',
+    text: `Your login code is ${code}. It expires in 10 minutes.\n\n${LOGIN_EMAIL_NOTICE}\n\nTerms of Use: ${origin}/terms-of-use\nPrivacy Policy: ${origin}/privacy-policy`,
+  };
+  if (environment.LOGIN_EMAIL_FROM) message.from = environment.LOGIN_EMAIL_FROM;
+  return message;
+}
+
 function normalizeEmail(email) {
   return String(email || '').trim().toUpperCase();
 }
@@ -46,45 +80,17 @@ function toFourDigitCode(value) {
   return n;
 }
 
-async function sendLoginCodeEmail(email, code) {
+async function sendLoginCodeEmail(email, code, options = {}) {
   const msmtpPath = process.env.MSMTP_PATH || '/usr/bin/msmtp';
-  const msmtpConfig = process.env.MSMTP_CONFIG || '/etc/msmtprc';
-  const msmtpAccount = process.env.MSMTP_ACCOUNT || 'mail_relay_credentials';
-  const from = process.env.LOGIN_EMAIL_FROM || '';
 
-  if (!fs.existsSync(msmtpPath)) {
+  if (!options.transport && !fs.existsSync(msmtpPath)) {
     console.info(`Login code for ${email}: ${code}`);
     return;
   }
 
-  let nodemailer;
-  try {
-    // Optional dependency so development can still run without local msmtp wiring.
-    // eslint-disable-next-line global-require
-    nodemailer = require('nodemailer');
-  } catch (err) {
-    console.error('sendEmail: nodemailer is required for msmtp relay.');
-    throw err;
-  }
+  const transport = options.transport || require('./mailTransport').createRelayTransport(process.env);
 
-  const transport = nodemailer.createTransport({
-    sendmail: true,
-    newline: 'unix',
-    path: msmtpPath,
-    // Use msmtp's native options for account + config file.
-    args: ['-i', '-a', msmtpAccount, '-C', msmtpConfig],
-    logger: true,
-    debug: true,
-  });
-
-  const message = {
-    to: email,
-    subject: 'Sierra Club Huts login code',
-    text: `Your login code is ${code}. It expires in 10 minutes.`,
-  };
-  if (from) {
-    message.from = from;
-  }
+  const message = composeLoginCodeEmail(email, code);
 
   const info = await transport.sendMail(message);
   console.info('sendEmail: msmtp response:', {
@@ -105,6 +111,10 @@ function assertNormalizedEmailLength(email) {
 }
 
 module.exports = {
+  LOGIN_EMAIL_NOTICE,
+  appPublicOrigin,
+  composeLoginCodeEmail,
+  validateLoginEmailConfiguration,
   assertNormalizedEmailLength,
   generateLoginCode,
   isOlderThanMinutes,

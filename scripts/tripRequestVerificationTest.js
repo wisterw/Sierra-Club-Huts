@@ -82,13 +82,18 @@ function run() {
   assert.strictEqual(saved[0].saturday_week_number.length, 10);
   assert.notStrictEqual(saved[0].saturday_week_number, 'stale');
 
-  const linkedRequests = saved.map((row) => ({
-    ...row,
-    Combination_first_request: row.Request_ID === saved[0].Request_ID ? null : saved[0].Request_ID,
-  }));
+  const invalidLinks = saved.map((row) => ({ ...row, Combination_first_request: saved[0].Request_ID }));
+  assert.throws(() => store.replaceRequestsForRequestor(requestorRecord.Requestor_ID, invalidLinks), /combination request/);
+  assert.deepStrictEqual(store.getRequestsByRequestorId(requestorRecord.Requestor_ID), saved, 'invalid combination must roll back');
+  const linkedRequests = [
+    { ...saved[0], Benson: true, Bradley: false, Departure: '2026-12-21', Combination_first_request: saved[0].Request_ID },
+    { ...saved[1], Benson: false, Grubb: false, Bradley: true, Arrival: '2026-12-21', Departure: '2026-12-23', Choice_Number: 1, Combination_first_request: saved[0].Request_ID },
+  ];
   store.replaceRequestsForRequestor(requestorRecord.Requestor_ID, linkedRequests);
   const relinked = store.getRequestsByRequestorId(requestorRecord.Requestor_ID);
   assert.strictEqual(relinked[1].Combination_first_request, relinked[0].Request_ID);
+  store.replaceRequestsForRequestor(requestorRecord.Requestor_ID, relinked.slice().reverse());
+  assert.strictEqual(store.getRequestsByRequestorId(requestorRecord.Requestor_ID)[1].Combination_first_request, relinked[0].Request_ID);
 
   const requestorsById = new Map([
     [1, requestor(1, 3)],

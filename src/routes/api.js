@@ -5,6 +5,8 @@ const multer = require('multer');
 const { BLANK_WAIVER_FILE, EMAIL_ERROR_LOG } = require('../config');
 const { toTsv, REQUESTORS_HEADERS } = require('../data/tsvStore');
 const { SqliteStore, boolFromAny } = require('../data/sqliteStore');
+const { documents, agreementMetadata, currentAgreementVersions } = require('../services/agreements');
+const { normalizeCredits } = require('../services/credits');
 const {
   generateLoginCode,
   isOlderThanMinutes,
@@ -15,12 +17,15 @@ const {
 } = require('../services/auth');
 const { validateRequestSet, summarizeByChoice } = require('../services/requestLogic');
 const { assignLotteryValues, runAssignment, efficiencyReport, requestsJoinedReport } = require('../services/assignment');
+const { captureAllocation, commitAllocation, latestAllocation } = require('../data/allocationRepository');
 
 const upload = multer();
 const WAIVER_UPLOAD_MAX_BYTES = 10 * 1024 * 1024;
 const WAIVER_UPLOAD_MIME_TYPES = new Set(['application/pdf', 'image/jpeg', 'image/png']);
 const REQUESTOR_UPLOAD_MAX_BYTES = 2 * 1024 * 1024;
 const requestorUpload = multer({ limits: { fileSize: REQUESTOR_UPLOAD_MAX_BYTES } });
+const reservations = require('../data/placeholderReservations');
+const reservationUpload = multer({ limits: { fileSize: reservations.MAX_BYTES } });
 const REQUESTOR_SAMPLE_HEADERS = ['Email', 'first_name', 'last_name', 'address', 'city', 'state', 'zip', 'Phone'];
 const router = express.Router();
 const store = new SqliteStore();
@@ -45,7 +50,8 @@ function toBoolean(v) {
 }
 
 function requireAuth(req, res, next) {
-  if (!req.session?.userId) {
+  const sessionUser = req.session?.userId && store.getRequestorById(req.session.userId);
+  if (!sessionUser || sessionUser.Is_placeholder) {
     return res.status(401).json({ error: 'Unauthorized' });
   }
   return next();
@@ -55,6 +61,9 @@ function requireAdmin(req, res, next) {
   const user = store.getRequestorById(req.session?.userId, { includePrivate: true });
   if (!user || !user.Admin) {
     return res.status(403).json({ error: 'Admin privileges required.' });
+  }
+  if (req.params.id && store.getRequestorById(Number(req.params.id))?.Is_placeholder) {
+    return res.status(400).json({ error: 'Manage placeholders through Existing reservations.' });
   }
   return next();
 }
@@ -144,7 +153,13 @@ function parseRequestorUpload(raw) {
       const descriptor = REQUESTOR_UPLOAD_COLUMNS.get(headers[columnIndex]);
       const value = cells[columnIndex] || '';
       if (!descriptor || !value || descriptor.key === 'Email') continue;
-      if (descriptor.type === 'number') {
+      if (descriptor.key === 'Credits') {
+        try {
+          partial.Credits = normalizeCredits(value);
+        } catch (error) {
+          throw new Error(`TSV row ${lineIndex + 1}: ${error.message}`);
+        }
+      } else if (descriptor.type === 'number') {
         const number = Number(value);
         if (!Number.isFinite(number)) {
           throw new Error(`TSV row ${lineIndex + 1} has an invalid number for ${headers[columnIndex]}.`);
@@ -183,7 +198,7 @@ router.post('/send-email', async (req, res) => {
   try {
     const email = normalizeEmail(req.body?.email);
     const requestor = store.getRequestorByEmail(email);
-    if (!requestor) {
+    if (!requestor || requestor.Is_placeholder) {
       console.error(`sendEmail: unknown email: ${email}`);
       return res.json({ ok: true, message: 'code sent' });
     }
@@ -221,13 +236,25 @@ router.post('/send-email', async (req, res) => {
   }
 });
 
+router.get('/agreements', (_req, res) => {
+  res.set('Cache-Control', 'no-store').json(agreementMetadata());
+});
+
 router.post('/check-login', (req, res) => {
   try {
+    const submitted = req.body?.agreementVersions;
+    const current = currentAgreementVersions();
+    if (!submitted || !['termsOfUse', 'privacyPolicy'].every((kind) => typeof submitted[kind] === 'string' && /^[a-f0-9]{64}$/.test(submitted[kind]))) {
+      return res.status(400).json({ error: 'Please acknowledge the Terms of Use and Privacy Policy when signing in.' });
+    }
+    if (submitted.termsOfUse !== current.termsOfUse || submitted.privacyPolicy !== current.privacyPolicy) {
+      return res.status(409).json({ error: 'The agreements have changed. Review the current Terms of Use and Privacy Policy, then select Sign in again.' });
+    }
     const email = normalizeEmail(req.body?.email);
     const providedCode = toFourDigitCode(req.body?.code);
     const requestor = store.getRequestorByEmail(email);
 
-    if (!requestor) {
+    if (!requestor || requestor.Is_placeholder) {
       console.error(`checkLogin: unknown email: ${email}`);
       return res.status(401).json({ error: AUTH_FAILURE_MESSAGE });
     }
@@ -267,8 +294,21 @@ router.post('/check-login', (req, res) => {
       return res.status(401).json({ error: AUTH_FAILURE_MESSAGE });
     }
 
+    try {
+      store.recordAgreementAcknowledgement(requestor.Requestor_ID, documents);
+    } catch (error) {
+      console.error('checkLogin: acknowledgement could not be saved:', error.message);
+      return res.status(503).json({ error: 'Sign in could not be completed. Please try again.' });
+    }
     req.session.userId = requestor.Requestor_ID;
-    req.session.save(() => {
+    req.session.save((error) => {
+      if (error) {
+        delete req.session.userId;
+        return req.session.destroy(() => {
+          res.clearCookie('huts.sid');
+          res.status(503).json({ error: 'Sign in could not be completed. Please try again.' });
+        });
+      }
       res.json({ userId: requestor.Requestor_ID, isAdmin: requestor.Admin });
     });
   } catch (err) {
@@ -292,7 +332,7 @@ router.post('/logout', (req, res) => {
 
 router.get('/me', requireAuth, (req, res) => {
   const requestor = store.getRequestorById(req.session.userId, { includePrivate: true });
-  if (!requestor) {
+  if (!requestor || requestor.Is_placeholder) {
     return res.status(404).json({ error: 'Requestor not found.' });
   }
   return res.json(requestorPayload(requestor, { includePrivate: Boolean(requestor.Admin) }));
@@ -340,17 +380,30 @@ router.put('/requestor/:id', requireAuth, (req, res) => {
   };
 
   if (current.Admin) {
-    if (req.body.Credits !== undefined) updates.Credits = Number(req.body.Credits);
+    if (req.body.Credits !== undefined) {
+      try {
+        updates.Credits = normalizeCredits(req.body.Credits);
+      } catch (error) {
+        return res.status(400).json({ error: error.message });
+      }
+    }
     if (req.body.Admin !== undefined) updates.Admin = toBoolean(req.body.Admin);
     if (req.body.years_of_service !== undefined) updates.years_of_service = req.body.years_of_service;
     if (req.body.private_comments !== undefined) updates.private_comments = req.body.private_comments;
     if (req.body.liability_waiver_date !== undefined) updates.liability_waiver_date = req.body.liability_waiver_date;
   }
 
-  const updated = store.updateRequestorById(id, updates, {
-    allowAdminFields: current.Admin,
-    includePrivate: current.Admin,
-  });
+  let updated;
+  try {
+    updated = store.updateRequestorById(id, updates, {
+      allowAdminFields: current.Admin,
+      includePrivate: current.Admin,
+      actorId: current.Requestor_ID,
+    });
+  } catch (error) {
+    console.error('Profile update could not be saved:', error.message);
+    return res.status(503).json({ error: 'Profile changes could not be saved. Please try again.' });
+  }
   if (!updated) {
     return res.status(404).json({ error: 'Requestor not found.' });
   }
@@ -358,6 +411,7 @@ router.put('/requestor/:id', requireAuth, (req, res) => {
 });
 
 router.put('/requestor/:id/requests', requireAuth, (req, res) => {
+  if (store.getRequestorById(Number(req.params.id))?.Is_placeholder) return res.status(400).json({ error: 'Manage placeholders through Existing reservations.' });
   const id = Number(req.params.id);
   const current = store.getRequestorById(req.session.userId, { includePrivate: true });
   if (!current) {
@@ -373,7 +427,12 @@ router.put('/requestor/:id/requests', requireAuth, (req, res) => {
     return res.status(400).json({ error });
   }
 
-  store.replaceRequestsForRequestor(id, requests);
+  try {
+    store.replaceRequestsForRequestor(id, requests, { actorId: current.Requestor_ID });
+  } catch (error) {
+    console.error('Trip request update could not be saved:', error.message);
+    return res.status(503).json({ error: 'Request changes could not be saved. Please try again.' });
+  }
   return res.json({ ok: true, requests: store.getRequestsByRequestorId(id) });
 });
 
@@ -485,6 +544,27 @@ router.post('/liability-waiver', requireAuth, upload.single('file'), (req, res) 
   }
 });
 
+router.get('/admin/reservations/sample', requireAuth, requireAdmin, (_req, res) => {
+  res.attachment('reservations-sample.tsv').type('text/tab-separated-values').send(`${reservations.HEADERS.join('\t')}\n`);
+});
+router.get('/admin/reservations', requireAuth, requireAdmin, (_req, res) => {
+  res.json({ rows: reservations.listReservations(store) });
+});
+router.post('/admin/reservations', requireAuth, requireAdmin, (req, res, next) => {
+  reservationUpload.single('file')(req, res, (error) => error ? res.status(400).json({ error: error.message }) : next());
+}, (req, res) => {
+  try {
+    const raw = req.file ? req.file.buffer.toString('utf8') : req.body?.tsv;
+    res.json({ ok: true, ...reservations.importReservations(store, raw, Number(req.session.userId)) });
+  } catch (error) { res.status(400).json({ error: error.message }); }
+});
+router.delete('/admin/reservations/:reference', requireAuth, requireAdmin, (req, res) => {
+  try {
+    reservations.removeReservation(store, req.params.reference, Number(req.session.userId));
+    res.json({ ok: true });
+  } catch (error) { res.status(400).json({ error: error.message }); }
+});
+
 router.get('/admin/upload-requestors/sample', requireAuth, requireAdmin, (_req, res) => {
   res.type('text/tab-separated-values');
   res.setHeader('Content-Disposition', 'attachment; filename="requestors-sample.tsv"');
@@ -497,7 +577,7 @@ router.post('/admin/upload-requestors', requireAuth, requireAdmin, receiveReques
   }
   try {
     const parsed = parseRequestorUpload(req.file.buffer.toString('utf8'));
-    const summary = store.bulkUpsertRequestors(parsed.rows, { skipped: parsed.skipped });
+    const summary = store.bulkUpsertRequestors(parsed.rows, { skipped: parsed.skipped, actorId: Number(req.session.userId) });
     return res.json({ ok: true, ...summary });
   } catch (err) {
     return res.status(400).json({ error: err.message });
@@ -618,6 +698,8 @@ router.get('/admin/download/requestors', requireAuth, requireAdmin, (req, res) =
 
   const headers = [
     ...REQUESTORS_HEADERS,
+    'Is_placeholder',
+    'Reservation_reference',
     'Lottery_value',
     'has_a_chainsaw',
     'chainsaw_user',
@@ -637,6 +719,8 @@ router.get('/admin/download/requests-joined', requireAuth, requireAdmin, (req, r
   const joined = requestsJoinedReport(store.listRequests(), requestorsById, { filter });
   const headers = [
     'Requestor_ID',
+    'Is_placeholder',
+    'Reservation_reference',
     'Email',
     'first_name',
     'last_name',
@@ -674,6 +758,9 @@ router.get('/admin/download/requests-joined', requireAuth, requireAdmin, (req, r
     'Lottery_value',
     'Request_Creation_date',
     'Request_Last_mod_date',
+    'contention_status',
+    'contention_status_changed_at',
+    'contention_email_sent_at',
     'hut_count_flexibility',
     'saturday_week_number',
     'Combination_first_request',
@@ -684,17 +771,19 @@ router.get('/admin/download/requests-joined', requireAuth, requireAdmin, (req, r
   return res.send(toTsv(headers, joined));
 });
 
-router.post('/admin/run-assignment', requireAuth, requireAdmin, (req, res) => {
-  const requestorsById = new Map(store.listRequestors({ includePrivate: true }).map((r) => [r.Requestor_ID, r]));
-  const seed = req.body?.seed;
-  const regenerateLotteryNumbers = req.body?.regenerateLotteryNumbers !== false;
-  const requests = store.listRequests();
-  const result = runAssignment(requests, requestorsById, { seed, regenerateLotteryNumbers });
-  store.saveRequests(requests);
-  if (result?.requestorsToPersist?.length) {
-    store.saveRequestorLotteryValues(result.requestorsToPersist);
+router.post('/admin/run-assignment', requireAuth, requireAdmin, async (req, res) => {
+  try {
+    const snapshot = captureAllocation(store);
+    if (snapshot.mode !== 'trip-request') return res.status(409).json({ error: 'Run assignment in trip-request mode.' });
+    const people = new Map(snapshot.requestors.map((p) => [p.Requestor_ID, p]));
+    const result = await runAssignment(snapshot.requests, people, { seed: req.body?.seed,
+      regenerateLotteryNumbers: req.body?.regenerateLotteryNumbers !== false, capacities: snapshot.capacities });
+    const summary = commitAllocation(store, snapshot, snapshot.requests, result);
+    return res.json({ ok: true, message: `Assignment completed optimally: ${summary.personNights} person-nights.`, summary });
+  } catch (error) {
+    console.error('Allocation assignment failed:', error.message);
+    return res.status(error.statusCode || 503).json({ error: error.message });
   }
-  return res.json({ ok: true, message: 'Assignment completed.' });
 });
 
 router.post('/admin/regenerate-lottery', requireAuth, requireAdmin, (req, res) => {
@@ -705,7 +794,7 @@ router.post('/admin/regenerate-lottery', requireAuth, requireAdmin, (req, res) =
 });
 
 router.get('/admin/efficiency-report', requireAuth, requireAdmin, (req, res) => {
-  return res.json({ rows: efficiencyReport(store.listRequests()) });
+  return res.json({ rows: efficiencyReport(store.listRequests().filter((r) => !store.getRequestorById(r.Requestor_ID)?.Is_placeholder)), allocationSummary: latestAllocation(store) });
 });
 
 module.exports = {

@@ -10,7 +10,7 @@ We will use a lightweight relational database for our persistence store.  The ta
 * state (string).  US state.
 * zip (string).  ZIP code.
 * Phone (string).  Backup communication method.   May be null.  
-* Credits (integer).  Required.  Users with more credits are higher priority and will get to choose first.  
+* Credits (decimal, increments of 0.1). Required. Users with more credits are higher priority and will get to choose first. UI, API, and TSV values use credit units; SQLite stores exact integer tenths in requestors.credits_tenths (1.5 credits = 15). Values with precision beyond tenths are rejected rather than rounded.
 * login_code (integer).  May be null if never logged in.
 * code_generated_when (Datetime).  may be null.  For code expiry, when did we send their email code most recently.  
 * Admin (boolean).  Does this person have admin rights.  
@@ -62,6 +62,9 @@ This is a table to capture the intersection of work parties and requestors.  Thi
   * Status. (string).  requested, granted, lost-lottery, not-used.  Default is "requested".  (Legacy values pending/confirmed should be treated as requested/granted.)
   * Creation\_date. (datetime).  When was the request created.  
   * Last\_mod\_date. (datetime).  When was this request last edited.
+  * contention_status (nullable string). NULL for no contention, "at-risk" for equal-priority lottery exposure, or "losing" for insufficient capacity after higher-priority demand. Calculated for a complete stay using the best allowed hut; linked combination rows share the worse leg's status. Independent of final Status.
+  * contention_status_changed_at (nullable UTC datetime). Server timestamp of the last actual contention status transition, including a return to NULL. Unchanged recalculations preserve it; an initially clear request has no transition timestamp.
+  * contention_email_sent_at (nullable UTC datetime). Server completion timestamp of the last confirmed successful contention email. Preserved across status changes; NULL until a successful send is recorded. Automatic contention emails are a separate feature.
   * hut_count_flexibility (integer).  How many huts the request is open to.  This is a calculated field, based on the # of huts marked TRUE.
   * saturday_week_number (integer).  This is a calculated field.  Using the saturday closest to the midpoint of the trip, which saturday does the trip cover.  This is calculated from the (departure date - arrival date) / 2 to get the midpoint, then find the closest saturday to that midpoint and calculate the week number for that saturday.
   * Combination_first_request.  (integer).  The Request\_ID of the first hut.

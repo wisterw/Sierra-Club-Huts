@@ -34,7 +34,7 @@ function requestRow(requestorId, choice, huts, ideal, min = ideal) {
   return row;
 }
 
-function run() {
+async function run() {
   const requestors = new Map([
     [1, requestor(1, 2, 10, 0.99)],
     [2, requestor(2, 2, 1, 0.01)],
@@ -45,7 +45,7 @@ function run() {
     requestRow(2, 1, ['Benson'], 12, 12),
   ];
 
-  runAssignment(requests, requestors, { seed: 'preference-order', regenerateLotteryNumbers: false });
+  await runAssignment(requests, requestors, { seed: 'preference-order', regenerateLotteryNumbers: false });
 
   const winner = requests.find((row) => row.Status === 'granted');
   const loser = requests.find((row) => row.Status === 'lost-lottery');
@@ -57,4 +57,4 @@ function run() {
   console.log('assignment preference order test passed.');
 }
 
-run();
+run().catch((error) => { console.error(error); process.exitCode = 1; });

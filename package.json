@@ -20,11 +20,22 @@
     "test:admin-work-parties": "node scripts/adminWorkPartyManagementTest.js",
     "test:liability-waivers": "node scripts/liabilityWaiverReviewTest.js",
     "test:smoke": "node scripts/browserSmokeTest.js",
-    "test:standalone": "node scripts/standaloneAppTest.js"
+    "test:standalone": "node scripts/standaloneAppTest.js",
+    "test:login-agreements": "node scripts/loginAgreementsTest.js",
+    "test:credits": "node scripts/fractionalCreditsTest.js",
+    "test:contention": "node scripts/contentionCalculationTest.js && node scripts/contentionPersistenceTest.js",
+    "test:contention-alerts": "node scripts/contentionAlertTest.js && node scripts/contentionAlertApiTest.js",
+    "alerts:contention": "node scripts/contentionAlerts.js",
+    "test:allocation": "node scripts/allocationOptimizationTest.js && node scripts/allocationPersistenceTest.js",
+    "benchmark:allocation": "node scripts/allocationBenchmark.js",
+    "test:allocation-browser": "node scripts/allocationBrowserTest.js",
+    "test:reservations": "node scripts/placeholderReservationsTest.js",
+    "test:reservations-browser": "node scripts/placeholderReservationsBrowserTest.js"
   },
   "dependencies": {
     "express": "^4.22.1",
     "express-session": "^1.18.0",
+    "highs": "1.15.3",
     "multer": "^1.4.5-lts.1",
     "nodemailer": "^6.10.1"
   },
