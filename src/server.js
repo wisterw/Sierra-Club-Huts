@@ -62,7 +62,7 @@ process.on('SIGTERM', () => {
   process.exit(0);
 });
 
-app.listen(port, () => {
+app.listen(port, '0.0.0.0', () => {
   const displayHost = process.env.PUBLIC_HOST || 'localhost';
   const scheme = process.env.PUBLIC_SCHEME || 'http';
   // eslint-disable-next-line no-console

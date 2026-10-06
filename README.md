@@ -59,7 +59,7 @@ These steps assume an Ubuntu instance, but the same ideas apply to other distros
 
 **Recommended environment variables**
 * `NODE_ENV=production`
-* `PORT=3000` (or another port if you put the app behind Nginx/ALB)
+* `PORT=3000` (or another port if you put the app behind Nginx/ALB). The server listens on `0.0.0.0` (all IPv4 interfaces).
 * `SESSION_SECRET` (required in production)
 * `TRUST_PROXY=1` (set to `1` if you terminate TLS at a load balancer or reverse proxy)
 * `SESSION_SECURE=true` (set to `true` only when requests reach the app over HTTPS)
