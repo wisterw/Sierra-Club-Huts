@@ -4,6 +4,7 @@
   "description": "Sierra Club hut reservation and lottery app",
   "main": "src/server.js",
   "scripts": {
+    "test:ses-mail": "node scripts/sesMailTest.js",
     "start": "node src/server.js",
     "dev": "node --watch src/server.js",
     "test:summary": "node scripts/requestSummaryTest.js",
@@ -33,11 +34,11 @@
     "test:reservations-browser": "node scripts/placeholderReservationsBrowserTest.js"
   },
   "dependencies": {
+    "@aws-sdk/client-ses": "^3.1146.0",
     "express": "^4.22.1",
     "express-session": "^1.18.0",
     "highs": "1.15.3",
-    "multer": "^1.4.5-lts.1",
-    "nodemailer": "^6.10.1"
+    "multer": "^1.4.5-lts.1"
   },
   "repository": {
     "type": "git",

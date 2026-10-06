@@ -10,7 +10,7 @@ async function main() {
     } else if (args[0] === '--reconcile') {
       const [, id, outcome] = args;
       if (!id || !['accepted', 'rejected'].includes(outcome)) throw new Error('Usage: --reconcile ATTEMPT_ID accepted|rejected');
-      store.alerts.finish(id, outcome, 'Operator reconciled relay outcome');
+      store.alerts.finish(id, outcome, 'Operator reconciled provider outcome');
       console.log('Reconciled attempt', id, outcome);
     } else {
       console.log(JSON.stringify(await runContentionAlerts(store, { dryRun: args.includes('--dry-run'), force: args.includes('--force') }), null, 2));

@@ -2,12 +2,12 @@ Except for checkLogin, all of the backend endpoints require a valid session cook
 
 At startup, open the requestors and requests files to make sure they are not locked.  If the files are locked, do not exist, or exist but do not have a valid header row, throw an error to the console and exit.
 
-**sendEmail**  This endpoint receives an email address from a user and enables valid users to login to the app. For sending email, use msmtp as a mail relay via nodemailer. Use the account named mail_relay_credentials in /etc/msmtprc .  The binary for msmtp is at /usr/bin/msmtp 
+**sendEmail**  This endpoint receives an email address from a user and enables valid users to login to the app. For sending email, use Amazon SES in us-east-2 through the shared AWS SDK transport with sender noreply@tahoe-ski-huts.rsvp. Production uses SES; non-production console mode outputs login codes locally without AWS calls.
 * Strip any leading and trailing spaces.    
 * Check the email against the list of requestors to retrieve the user ID (case insensitive lookup).  If the provided email doesn’t exist, log an error quietly in back-end logs but return success to the front end ("code sent") to reduce the risk of user enumeration due to distinct error behavior.
 * if the provided email exists in the requestors file, generate a 4-digit random integer from 1000-9999.
 * write/persist the integer to the login_code column of the requestors file.  Write also the current time to the "code_generated_when" timestamp.  
-* Use msmtp to email the code to the verified address.  
+* Use Amazon SES to email the code to the verified volunteer address in SES mode. SES failures must not fall back to console output.
 * For any internal errors caught while trying to send an email, append them to a local logfile .
 
 **checkLogin**  This endpoint receives an email address and a login code, and takes the following steps:

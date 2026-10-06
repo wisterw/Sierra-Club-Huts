@@ -1,5 +1,6 @@
 const { HUTS } = require('../config');
 const { appPublicOrigin } = require('./auth');
+const { EMAIL_FROM } = require('./mailTransport');
 
 const HOUR = 60 * 60 * 1000;
 const INTERVAL = 2 * HOUR;
@@ -76,7 +77,7 @@ function composeAlert(email, content, environment = process.env) {
     ? '\n\nYour next remaining choice is also at risk in a lottery with equal-credit volunteers.' : '';
   const link = `${appPublicOrigin(environment)}/trip-requests`;
   const text = `${intro}\n\n${details}${fallbackRisk}\n\nThese contention estimates are not confirmed reservations.\nReview and edit your choices: ${link}`;
-  return { to: email, from: environment.CONTENTION_ALERT_FROM || environment.LOGIN_EMAIL_FROM,
+  return { to: email, from: EMAIL_FROM,
     subject: 'Sierra Club Huts: reservation request contention update', text,
     html: text.split('\n\n').map((p) => `<p>${escapeHtml(p).replace(/\n/g, '<br>')}</p>`).join('')
       .replace(escapeHtml(link), `<a href="${escapeHtml(link)}">${escapeHtml(link)}</a>`) };

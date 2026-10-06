@@ -8,7 +8,7 @@ const { runContentionAlerts } = require('../src/services/contentionAlertWorker')
 const { choicesFor, candidate, composeAlert, HOUR } = require('../src/services/contentionAlerts');
 
 const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'huts-alerts-'));
-const env = { NODE_ENV: 'test', CONTENTION_ALERTS_ENABLED: 'true', APP_PUBLIC_URL: 'https://huts.example.org', CONTENTION_ALERT_FROM: 'huts@example.org' };
+const env = { NODE_ENV: 'test', CONTENTION_ALERTS_ENABLED: 'true', APP_PUBLIC_URL: 'https://huts.example.org', MAIL_TRANSPORT: 'console' };
 const row = (spots = 2, extra = {}) => ({ Benson: true, Arrival: '2026-12-20', Departure: '2026-12-22', Choice_Number: 1, Spots_ideal: spots, Spots_min: spots, ...extra });
 let serial = 0;
 function fixture() {
@@ -122,7 +122,7 @@ async function testOperations() {
     assert.equal(JSON.stringify(f.store.db.prepare('SELECT * FROM contention_alert_recipients').all()), state);
     assert.equal(f.sent.length, 0);
     assert.equal((await f.run({ environment: { ...env, CONTENTION_ALERTS_ENABLED: 'false' } })).skipped, 'disabled');
-    await assert.rejects(() => runContentionAlerts(f.store, { environment: { ...env, MSMTP_PATH: path.join(dir, 'missing') }, force: true }), /relay/);
+    await assert.rejects(() => runContentionAlerts(f.store, { environment: { ...env, MAIL_TRANSPORT: 'console' }, force: true }), /console/);
     assert.equal(f.store.alerts.acquire('test-owner', true), true);
     assert.equal((await f.run()).skipped, 'not-due-or-leased');
     f.store.alerts.release('test-owner');

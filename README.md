@@ -32,18 +32,21 @@ Check your profile and update any missing information.
 
 ## For administrators
 
-### Email setup using MSMTP
+### Email setup using Amazon SES
 
-The app sends emails as one of the administrators and does not have its own email system.  Set up your account so the app can send emails as you.
-* you may need to adjust /data/requestors.tsv locally.  this has real email addresses, so if the repository is public we do not want them displayed.
-* adjust /etc/msmtprc to use the account name and password.  For Yahoo, this requires getting an app password which is distinct from the password you use to log in to yahoo mail.  See https://github.com/wisterw/Sierra-Club-Huts/blob/main/Docs/setting%20up%20yahoo%20mail%20for%20email%20relay.png for where to find this in Yahoo Mail.  
-* set the mail relay environment variables before starting the app:
-  * `MSMTP_PATH` (default: `/usr/bin/msmtp`)
-  * `MSMTP_CONFIG` (default: `/etc/msmtprc`)
-  * `MSMTP_ACCOUNT` (default: `mail_relay_credentials`)
-  * `LOGIN_EMAIL_FROM` (optional but recommended if your relay enforces sender address)
-  * `APP_PUBLIC_URL` (canonical app origin, such as `https://huts.example.org`; required in production when the mail relay is available, so agreement links in emails reach the correct site)
-* add yourself to data/requestors.tsv as an admin user.  You must be in the requestors file to receive a login code.
+Login codes and contention alerts are sent from `noreply@tahoe-ski-huts.rsvp` through Amazon SES in `us-east-2` (Ohio). The sender is fixed; legacy sender and MSMTP variables are unused.
+
+* Verify the sender address or its domain in SES in `us-east-2`. Verification is region-specific. If the account is in the SES sandbox, recipients must also be verified; request production access before sending to ordinary volunteers. See [SES sending requirements](https://docs.aws.amazon.com/ses/latest/APIReference/API_SendEmail.html).
+* Give the host's AWS role or credentials `ses:SendEmail` permission for the sender. The SDK uses the [default credential provider chain](https://docs.aws.amazon.com/sdk-for-javascript/v3/developer-guide/setting-credentials-node.html); an EC2 instance role avoids storing keys in the repository. SES SMTP credentials are not used.
+* Set `NODE_ENV=production`, `MAIL_TRANSPORT=ses`, and `APP_PUBLIC_URL` to the canonical HTTPS app origin. SES is the default in production. Console mode is rejected in production.
+* Outside production, mail defaults to `MAIL_TRANSPORT=console`, which prints login codes locally without AWS calls. Set `MAIL_TRANSPORT=ses` explicitly to send from another environment. Invalid modes are rejected. SES failures never fall back to printing codes.
+* Keep real volunteer data private. A recipient must exist in the requestors table to receive a login code.
+
+After deployment, run `npm install`, restart the app, request one login code for your recorded address, and check receipt (including spam) and server logs. A message ID confirms SES acceptance, not inbox delivery. Confirm regional sandbox status and sending quotas if rejected. Local tests use mocks; live SES delivery has not been verified from the laptop.
+
+For alerts, first run `npm run alerts:contention -- --dry-run`, then verify a controlled eligible alert on the host before enabling broad sending. Preserve the reconciliation steps below for uncertain outcomes. SES automatic send retries are disabled because [server errors and timeouts can occur after acceptance](https://docs.aws.amazon.com/ses/latest/dg/troubleshoot-error-messages.html).
+
+To roll back, restore the prior application build, install its dependencies, and restore its MSMTP host configuration. No database migration is required. Keep alert history and reconcile ambiguous attempts before retrying.
 
 ### Deploying to AWS EC2
 
@@ -66,7 +69,7 @@ These steps assume an Ubuntu instance, but the same ideas apply to other distros
 * `PUBLIC_HOST` (optional: the DNS name you want to show in logs)
 * `PUBLIC_SCHEME` (optional: `https` if you want logs to show HTTPS)
 * `APP_PUBLIC_URL` (required for production login email links; an HTTPS origin without a path, query, credentials, or fragment)
-* Mail relay variables from the section above if you want login codes emailed.
+* SES mail configuration from the section above for login emails.
 
 **Systemd example**
 ```ini
@@ -99,7 +102,7 @@ Host the app at the root of its own HTTPS hostname. Forward page routes, `/api/*
 
 Before opening trip requests to volunteers:
 
-1. Configure the production session secret, HTTPS/proxy settings, and mail relay described above. Verify a login code reaches an operator-controlled test email address already recorded in the system.
+1. Configure the production session secret, HTTPS/proxy settings, and SES delivery described above. Verify a login code reaches an operator-controlled test email address already recorded in the system.
 2. Load eligible volunteers through Admin's volunteer TSV upload and check their credits and profiles. Keep the existing database and waiver storage persistent across deployments.
 3. In **Admin → Application settings**, select **Trip Request mode** and save. The app preserves its stored mode across restart; deploying a new build does not force this setting. Work Party and Inactive modes remain available for later seasons.
 4. Verify `/trip-requests`, `/profile`, and authorized `/admin` links directly over HTTPS, including refresh, Back/Forward, static assets, and a returning session. Check that non-admins cannot access Admin and unavailable workflows obey the selected mode.
@@ -226,9 +229,9 @@ The Profile tab is where requestors update contact details and optional skill fi
 
 Contention alerts run every two hours and wait at least one hour after the latest change relevant to each recipient. They follow the highest-ranking remaining choice, consolidate newly lost choices, and omit impacts caused by the recipient's own edit. Merely being logged in does not suppress an alert. Unchanged contention does not generate reminders.
 
-Sending defaults to disabled. To enable it, configure `CONTENTION_ALERTS_ENABLED=true`, `APP_PUBLIC_URL` (the canonical application origin, HTTPS in production), and `CONTENTION_ALERT_FROM` (or `LOGIN_EMAIL_FROM`). The worker shares the login email relay settings: `MSMTP_PATH`, `MSMTP_CONFIG`, and `MSMTP_ACCOUNT`. The relay executable must exist; alerts never use the development login-code console fallback. The worker operates only in `trip-request` mode, for the current calendar year's December 15–April 30 request season, and excludes volunteers already granted a reservation in that season.
+Sending defaults to disabled. To enable it, configure `CONTENTION_ALERTS_ENABLED=true`, `MAIL_TRANSPORT=ses`, and `APP_PUBLIC_URL` (the canonical application origin, HTTPS in production). The worker shares the login SES client and fixed sender; console mode cannot send alerts. Dry-run previews work locally without AWS access. The worker operates only in `trip-request` mode, for the current calendar year's December 15–April 30 request season, and excludes volunteers already granted a reservation in that season.
 
-On first enablement, existing choices become an awareness baseline without historical catch-up emails. Future impacts are recorded atomically with request saves and credit changes. The server checks the persisted two-hour schedule every minute; restart runs a due batch once rather than replaying missed intervals. SQLite leases prevent overlapping server/command workers. Each send has a 30-second timeout, and database write locks are released before contacting the relay.
+On first enablement, existing choices become an awareness baseline without historical catch-up emails. Future impacts are recorded atomically with request saves and credit changes. The server checks the persisted two-hour schedule every minute; restart runs a due batch once rather than replaying missed intervals. SQLite leases prevent overlapping server/command workers. Each send has a 30-second timeout, and database write locks are released before contacting SES.
 
 Operator commands:
 
@@ -236,12 +239,12 @@ Operator commands:
 - `npm run alerts:contention`: evaluate a due batch when explicitly enabled.
 - `npm run alerts:contention -- --force`: evaluate now, retaining the one-hour quiet period and overlap protection.
 - `npm run alerts:contention -- --attempts`: list interrupted or ambiguous delivery attempts.
-- `npm run alerts:contention -- --reconcile ATTEMPT_ID accepted`: after verifying relay acceptance, record that exact snapshot as sent.
+- `npm run alerts:contention -- --reconcile ATTEMPT_ID accepted`: after verifying SES acceptance, record that exact snapshot as sent.
 - `npm run alerts:contention -- --reconcile ATTEMPT_ID rejected`: after verifying it was not accepted, allow a later scheduled retry.
 
-Run summaries report sent, failed, and ambiguous counts. Definite relay rejection is retryable; unknown outcomes, timeouts, or a crash between acceptance and recording require operator reconciliation and are not automatically resent. Exactly-once delivery across SMTP and SQLite is not guaranteed. Private history retains the exact message and represented choices; public volunteer payloads do not expose actor/history records.
+Run summaries report sent, failed, and ambiguous counts. Definite SES rejection is retryable; unknown outcomes, timeouts, or a crash between acceptance and recording require operator reconciliation and are not automatically resent. Exactly-once delivery across SES and SQLite is not guaranteed. Private history retains the exact message and represented choices; public volunteer payloads do not expose actor/history records.
 
-To disable or roll back sending, set `CONTENTION_ALERTS_ENABLED=false` and restart the server (and stop external worker invocations). Retain the additive notification tables. Re-enabling revalidates pending impacts against current choices; it does not reset the original awareness baseline. Use `npm run test:contention-alerts` for isolated fake-clock/fake-relay coverage, with no live emails.
+To disable or roll back sending, set `CONTENTION_ALERTS_ENABLED=false` and restart the server (and stop external worker invocations). Retain the additive notification tables. Re-enabling revalidates pending impacts against current choices; it does not reset the original awareness baseline. Use `npm run test:contention-alerts` for isolated fake-clock/fake-transport coverage, with no live emails.
 
 
 ### Existing priority reservations

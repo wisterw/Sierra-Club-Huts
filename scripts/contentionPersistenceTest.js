@@ -16,7 +16,7 @@ async function run() {
   // Set isolation before loading config or the router's singleton repository.
   process.env.DATABASE_FILE = path.join(dir, 'api.sqlite');
   process.env.WAIVER_STORAGE_DIR = path.join(dir, 'waivers');
-  process.env.MSMTP_PATH = path.join(dir, 'no-mail-relay');
+  process.env.MAIL_TRANSPORT = 'console';
   process.env.NODE_ENV = 'test';
   const { SqliteStore } = require('../src/data/sqliteStore');
   const { currentAgreementVersions, documents } = require('../src/services/agreements');

@@ -10,7 +10,7 @@ async function run() {
   const dbPath = path.join(dir, 'huts.sqlite');
   process.env.DATABASE_FILE = dbPath;
   process.env.WAIVER_STORAGE_DIR = path.join(dir, 'waivers');
-  process.env.MSMTP_PATH = path.join(dir, 'no-mail-relay');
+  process.env.MAIL_TRANSPORT = 'console';
   process.env.APP_PUBLIC_URL = 'https://huts.example.org';
   process.env.NODE_ENV = 'test';
   const { documents, currentAgreementVersions, loadAgreementDocuments, renderAgreementPage } = require('../src/services/agreements');
@@ -57,13 +57,13 @@ async function run() {
   assert(message.text.includes('Terms of Use: https://huts.example.org/terms-of-use'));
   assert(message.text.includes('Privacy Policy: https://huts.example.org/privacy-policy'));
   assert(!message.text.includes('attacker.example'));
-  assert.strictEqual(message.from, 'COORDINATOR@EXAMPLE.COM');
+  assert.strictEqual(message.from, 'noreply@tahoe-ski-huts.rsvp');
   assert.throws(() => appPublicOrigin({ NODE_ENV: 'production' }), /APP_PUBLIC_URL/);
   for (const origin of ['http://example.org', 'https://example.org/subpath', 'https://user:pass@example.org', 'https://example.org/?query=1', 'https://example.org/#fragment']) {
     assert.throws(() => appPublicOrigin({ NODE_ENV: 'production', APP_PUBLIC_URL: origin }), /APP_PUBLIC_URL/);
   }
   assert.strictEqual(appPublicOrigin({ PORT: 3333 }), 'http://localhost:3333');
-  assert.throws(() => validateLoginEmailConfiguration({ NODE_ENV: 'production', MSMTP_PATH: __filename }), /APP_PUBLIC_URL/);
+  assert.throws(() => validateLoginEmailConfiguration({ NODE_ENV: 'production' }), /APP_PUBLIC_URL/);
   let captured;
   await sendLoginCodeEmail(volunteer.Email, 1234, { transport: { sendMail: async (mail) => { captured = mail; return { accepted: [volunteer.Email] }; } } });
   assert.strictEqual(captured.text, composeLoginCodeEmail(volunteer.Email, 1234).text);

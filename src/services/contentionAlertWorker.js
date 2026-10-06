@@ -1,12 +1,12 @@
 const crypto = require('crypto');
 const { composeAlert } = require('./contentionAlerts');
 const { appPublicOrigin } = require('./auth');
-const { createRelayTransport, sendAlertMail } = require('./mailTransport');
+const { createSesTransport, sendAlertMail, mailMode } = require('./mailTransport');
 
 function validateAlertConfiguration(environment) {
   if (!environment.APP_PUBLIC_URL) throw new Error('APP_PUBLIC_URL is required for contention alerts.');
   appPublicOrigin(environment);
-  if (!environment.CONTENTION_ALERT_FROM && !environment.LOGIN_EMAIL_FROM) throw new Error('CONTENTION_ALERT_FROM or LOGIN_EMAIL_FROM is required for contention alerts.');
+  mailMode(environment);
 }
 async function runContentionAlerts(store, options = {}) {
   const environment = options.environment || process.env;
@@ -20,7 +20,7 @@ async function runContentionAlerts(store, options = {}) {
     return result;
   }
   // Fail before claiming any recipient when transport configuration is absent.
-  const transport = options.transport || createRelayTransport(environment);
+  const transport = options.transport || createSesTransport(environment);
   store.alerts.initialize();
   const owner = crypto.randomUUID();
   if (!store.alerts.acquire(owner, options.force)) return { ...result, skipped: 'not-due-or-leased' };
@@ -39,9 +39,8 @@ async function runContentionAlerts(store, options = {}) {
       try { await sendAlertMail(transport, message, options.timeoutMs); }
       catch (error) {
         deliveryError = error.message;
-        // Unknown process/network errors may occur after acceptance. Explicit
-        // relay rejection or failure to spawn is safe to retry.
-        outcome = error.definite || ['ENOENT', 'EACCES'].includes(error.code) ? 'rejected' : 'ambiguous';
+        // Unknown network/server errors may occur after acceptance.
+        outcome = error.definite ? 'rejected' : 'ambiguous';
       }
       store.alerts.finish(attempt, outcome, deliveryError);
       if (outcome === 'accepted') result.sent += 1;
@@ -55,7 +54,7 @@ function startContentionAlertScheduler(store, options = {}) {
   const environment = options.environment || process.env;
   if (environment.CONTENTION_ALERTS_ENABLED !== 'true') return () => {};
   validateAlertConfiguration(environment);
-  if (!options.transport) createRelayTransport(environment);
+  if (!options.transport) createSesTransport(environment);
   store.alerts.initialize();
   let running = false;
   const tick = async () => {

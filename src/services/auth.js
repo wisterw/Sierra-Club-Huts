@@ -1,4 +1,4 @@
-const fs = require('fs');
+const { EMAIL_FROM, mailMode, createSesTransport } = require('./mailTransport');
 
 const LOGIN_EMAIL_NOTICE = 'By using this code to log into the web app, you agree to our Terms of Use and Privacy Policy. Because these requests are for backcountry ski huts, logging in constitutes your explicit acceptance of the inherent risks of backcountry travel (such as avalanche, hypothermia, and lack of emergency services) and our volunteer limitation of liability.';
 
@@ -18,7 +18,8 @@ function appPublicOrigin(environment = process.env) {
 }
 
 function validateLoginEmailConfiguration(environment = process.env) {
-  if (environment.APP_PUBLIC_URL || (environment.NODE_ENV === 'production' && fs.existsSync(environment.MSMTP_PATH || '/usr/bin/msmtp'))) {
+  mailMode(environment);
+  if (environment.APP_PUBLIC_URL || environment.NODE_ENV === 'production') {
     appPublicOrigin(environment);
   }
 }
@@ -27,10 +28,10 @@ function composeLoginCodeEmail(email, code, environment = process.env) {
   const origin = appPublicOrigin(environment);
   const message = {
     to: email,
+    from: EMAIL_FROM,
     subject: 'Sierra Club Huts login code',
     text: `Your login code is ${code}. It expires in 10 minutes.\n\n${LOGIN_EMAIL_NOTICE}\n\nTerms of Use: ${origin}/terms-of-use\nPrivacy Policy: ${origin}/privacy-policy`,
   };
-  if (environment.LOGIN_EMAIL_FROM) message.from = environment.LOGIN_EMAIL_FROM;
   return message;
 }
 
@@ -81,19 +82,20 @@ function toFourDigitCode(value) {
 }
 
 async function sendLoginCodeEmail(email, code, options = {}) {
-  const msmtpPath = process.env.MSMTP_PATH || '/usr/bin/msmtp';
+  const environment = options.environment || process.env;
+  const mode = mailMode(environment);
 
-  if (!options.transport && !fs.existsSync(msmtpPath)) {
+  if (!options.transport && mode === 'console') {
     console.info(`Login code for ${email}: ${code}`);
     return;
   }
 
-  const transport = options.transport || require('./mailTransport').createRelayTransport(process.env);
+  const transport = options.transport || createSesTransport(environment, options);
 
-  const message = composeLoginCodeEmail(email, code);
+  const message = composeLoginCodeEmail(email, code, environment);
 
   const info = await transport.sendMail(message);
-  console.info('sendEmail: msmtp response:', {
+  console.info('sendEmail: provider response:', {
     accepted: info.accepted,
     rejected: info.rejected,
     response: info.response,

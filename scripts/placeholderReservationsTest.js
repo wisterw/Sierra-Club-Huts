@@ -99,7 +99,7 @@ async function main() {
   assert(!store.alerts.eligible().some((s) => s.requestor_id === first.Requestor_ID));
   const sent = [];
   store.contentionClock = () => `${year}-10-05T14:00:00Z`;
-  await runContentionAlerts(store, { force: true, environment: { CONTENTION_ALERTS_ENABLED: 'true', APP_PUBLIC_URL: 'https://example.org', CONTENTION_ALERT_FROM: 'admin@example.org' }, transport: { sendMail: async (m) => { sent.push(m.to); return { accepted: [m.to] }; } } });
+  await runContentionAlerts(store, { force: true, environment: { CONTENTION_ALERTS_ENABLED: 'true', APP_PUBLIC_URL: 'https://example.org', MAIL_TRANSPORT: 'console' }, transport: { sendMail: async (m) => { sent.push(m.to); return { accepted: [m.to] }; } } });
   assert(!sent.includes(placeholder.Email));
   assert(sent.includes(user.Email), 'real volunteers still receive reservation-induced contention alerts after the quiet period');
   store.close();
