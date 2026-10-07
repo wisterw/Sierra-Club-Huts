@@ -1,3 +1,4 @@
+require('../src/loadEnvironment');
 const { SqliteStore } = require('../src/data/sqliteStore');
 const { runContentionAlerts } = require('../src/services/contentionAlertWorker');
 

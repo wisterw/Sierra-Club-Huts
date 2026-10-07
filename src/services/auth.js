@@ -1,6 +1,6 @@
 const { EMAIL_FROM, mailMode, createSesTransport } = require('./mailTransport');
 
-const LOGIN_EMAIL_NOTICE = 'By using this code to log into the web app, you agree to our Terms of Use and Privacy Policy. Because these requests are for backcountry ski huts, logging in constitutes your explicit acceptance of the inherent risks of backcountry travel (such as avalanche, hypothermia, and lack of emergency services) and our volunteer limitation of liability.';
+const LOGIN_EMAIL_NOTICE = 'By using this code to log in, you agree to our Terms of Use and Privacy Policy. Because these requests are for backcountry huts, logging in constitutes your explicit acceptance of the inherent risks of backcountry lodging, including lack of emergency services, and our volunteer limitation of liability.';
 
 function appPublicOrigin(environment = process.env) {
   const configured = environment.APP_PUBLIC_URL;

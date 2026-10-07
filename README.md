@@ -34,6 +34,8 @@ Check your profile and update any missing information.
 
 ### Email setup using Amazon SES
 
+The server and contention-alert CLI load `.env` from the project root before initializing services, including when launched by PM2. Use uppercase variable names. Existing process/PM2 environment variables take precedence over `.env`; keep those values consistent. After changing `.env`, restart the app with `pm2 restart node-app`. After deploying this loader change, run `npm ci` first. Production also requires `SESSION_SECRET` and a valid HTTPS `APP_PUBLIC_URL`. Keep `.env` private; it is ignored by Git.
+
 Login codes and contention alerts are sent from `noreply@tahoe-ski-huts.rsvp` through Amazon SES in `us-east-2` (Ohio). The sender is fixed; legacy sender and MSMTP variables are unused.
 
 * Verify the sender address or its domain in SES in `us-east-2`. Verification is region-specific. If the account is in the SES sandbox, recipients must also be verified; request production access before sending to ordinary volunteers. See [SES sending requirements](https://docs.aws.amazon.com/ses/latest/APIReference/API_SendEmail.html).
